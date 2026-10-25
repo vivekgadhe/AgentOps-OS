@@ -1,0 +1,55 @@
+AgentOps-OS/
+│
+├── .env.example
+├── .gitignore
+├── Makefile
+├── README.md
+├── docker-compose.yml
+│
+├── docker/
+│   └── postgres/
+│       └── init/
+│           └── 01-create-test-db.sql
+│
+└── backend/
+    ├── .python-version
+    ├── pyproject.toml
+    │
+    ├── src/
+    │   └── agentops/
+    │       ├── __init__.py
+    │       ├── main.py
+    │       │
+    │       ├── api/
+    │       │   ├── __init__.py
+    │       │   ├── deps.py
+    │       │   └── v1/
+    │       │       ├── __init__.py
+    │       │       ├── health.py
+    │       │       └── router.py
+    │       │
+    │       ├── core/
+    │       │   ├── __init__.py
+    │       │   ├── config.py
+    │       │   ├── context.py
+    │       │   ├── logging.py
+    │       │   └── middleware.py
+    │       │
+    │       ├── db/
+    │       │   ├── __init__.py
+    │       │   └── session.py
+    │       │
+    │       └── schemas/
+    │           ├── __init__.py
+    │           └── health.py
+    │
+    └── tests/
+        ├── conftest.py
+        ├── unit/
+        │   ├── test_config.py
+        │   └── test_logging.py
+        ├── smoke/
+        │   └── test_health.py
+        └── integration/
+            ├── conftest.py
+            └── test_health_real_db.py

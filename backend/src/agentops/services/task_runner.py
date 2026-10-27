@@ -43,11 +43,14 @@ def _run_handler(
 
 
 def _stop_process(process: Any) -> None:
-    """Stop a running child process and wait for it to exit."""
+    """Stop a child process safely and wait for it to exit."""
+    # process.start() may fail before a child process exists.
+    if process.pid is None:
+        return
+
     if not process.is_alive():
         process.join(timeout=0)
         return
-
 
     process.terminate()
     process.join(timeout=2)

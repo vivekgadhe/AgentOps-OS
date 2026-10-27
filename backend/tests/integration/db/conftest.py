@@ -66,11 +66,12 @@ def pg_test_url() -> URL:
 
 @pytest.fixture(scope="session")
 def pg_test_engine(pg_test_url: URL) -> Iterator[Engine]:
+    """Reuse connections to the guarded integration test database."""
     engine = create_engine(
-    pg_test_url,
-    poolclass=NullPool,
-    connect_args={"connect_timeout": 5},
-)
+        pg_test_url,
+        connect_args={"connect_timeout": 5},
+    )
+
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -84,6 +85,7 @@ def pg_test_engine(pg_test_url: URL) -> Iterator[Engine]:
         if os.environ.get("AGENTOPS_REQUIRE_DB") == "1":
             pytest.fail(f"{message} ({exc.__class__.__name__})")
         pytest.skip(message)
+
     yield engine
     engine.dispose()
 

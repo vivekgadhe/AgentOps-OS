@@ -1,4 +1,3 @@
-
 """API endpoints for creating, executing, and retrieving workflows."""
 
 from uuid import UUID
@@ -8,8 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from agentops.api.deps import get_current_user, get_db
-from agentops.db.models import User, WorkflowRun
-from agentops.schemas.workflows import WorkflowCreate, WorkflowResponse
+from agentops.db.models import TaskDependency, User, WorkflowRun
+from agentops.schemas.workflows import (
+    TaskResponse,
+    WorkflowCreate,
+    WorkflowResponse,
+)
 from agentops.services.execution import ExecutionError, ExecutionService
 from agentops.services.handlers import register_builtin_handlers
 
@@ -53,7 +56,7 @@ def create_workflow(
             detail="Workflow creation failed",
         )
 
-    return _to_response(result)
+    return _to_response(result, db)
 
 
 @router.post("/{run_id}/execute", response_model=WorkflowResponse)
@@ -75,7 +78,7 @@ def execute_workflow(
         ) from exc
 
     result = _get_owned_workflow(db, run_id, user.id)
-    return _to_response(result)
+    return _to_response(result, db)
 
 
 @router.get("/{run_id}", response_model=WorkflowResponse)
@@ -85,7 +88,8 @@ def get_workflow(
     user: User = Depends(get_current_user),
 ) -> WorkflowResponse:
     """Retrieve a workflow and its tasks."""
-    return _to_response(_get_owned_workflow(db, run_id, user.id))
+    workflow = _get_owned_workflow(db, run_id, user.id)
+    return _to_response(workflow, db)
 
 
 def _get_owned_workflow(
@@ -111,8 +115,46 @@ def _get_owned_workflow(
     return workflow
 
 
-def _to_response(workflow: WorkflowRun) -> WorkflowResponse:
-    """Convert an ORM workflow and its tasks into the public response schema."""
+def _to_response(
+    workflow: WorkflowRun,
+    db: Session,
+) -> WorkflowResponse:
+    """Convert a workflow and its dependencies to the response schema."""
+    task_by_id = {
+        task.id: task for task in workflow.tasks
+    }
+
+    dependencies_by_task_id: dict[UUID, list[str]] = {
+        task.id: [] for task in workflow.tasks
+    }
+
+    edges = list(
+        db.scalars(
+            select(TaskDependency).where(
+                TaskDependency.workflow_run_id == workflow.id
+            )
+        ).all()
+    )
+
+    for edge in edges:
+        prerequisite = task_by_id.get(edge.depends_on_task_id)
+
+        if prerequisite is not None:
+            dependencies_by_task_id[edge.task_id].append(
+                prerequisite.key
+            )
+
+    task_responses = [
+        TaskResponse.model_validate(task).model_copy(
+            update={
+                "depends_on": sorted(
+                    dependencies_by_task_id[task.id]
+                )
+            }
+        )
+        for task in workflow.tasks
+    ]
+
     return WorkflowResponse(
         id=workflow.id,
         goal=workflow.goal,
@@ -123,5 +165,5 @@ def _to_response(workflow: WorkflowRun) -> WorkflowResponse:
         finished_at=workflow.finished_at,
         created_at=workflow.created_at,
         updated_at=workflow.updated_at,
-        tasks=workflow.tasks,
+        tasks=task_responses,
     )

@@ -1,4 +1,3 @@
-
 """Request and response schemas for workflow execution."""
 
 from datetime import datetime
@@ -17,6 +16,7 @@ class TaskCreate(BaseModel):
     input_data: dict[str, Any] = Field(default_factory=dict)
     max_attempts: int = Field(default=3, ge=1, le=10)
     timeout_seconds: int = Field(default=300, ge=1, le=3600)
+    depends_on: list[str] = Field(default_factory=list, max_length=100)
 
     @field_validator("key", "name")
     @classmethod
@@ -31,6 +31,28 @@ class TaskCreate(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("Tool name cannot be blank")
         return value.strip() if value is not None else None
+
+    @field_validator("depends_on")
+    @classmethod
+    def validate_dependencies(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+
+        for value in values:
+            dependency = value.strip()
+
+            if not dependency:
+                raise ValueError("Dependency keys cannot be blank")
+
+            if dependency in seen:
+                raise ValueError(
+                    f"Duplicate dependency key: {dependency}"
+                )
+
+            seen.add(dependency)
+            normalized.append(dependency)
+
+        return normalized
 
 
 class WorkflowCreate(BaseModel):
@@ -64,6 +86,7 @@ class TaskResponse(BaseModel):
     max_attempts: int
     started_at: datetime | None
     finished_at: datetime | None
+    depends_on: list[str] = Field(default_factory=list)
 
 
 class WorkflowResponse(BaseModel):

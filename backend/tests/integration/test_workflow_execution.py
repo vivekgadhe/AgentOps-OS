@@ -210,3 +210,68 @@ workflow_users: list[tuple[UUID, str]],
         "character_count": 14,
     }
 
+def test_workflow_dependencies_are_persisted_and_retrieved(
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
+) -> None:
+    """Persist task dependencies and return them through the API."""
+    owner_id, _ = workflow_users[0]
+    headers = auth_headers(integration_settings, owner_id)
+
+    # Deliberately provide tasks in reverse dependency order.
+    response = workflow_client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "goal": "Research, write, and publish a report",
+            "tasks": [
+                {
+                    "key": "publish",
+                    "name": "Publish report",
+                    "depends_on": ["write"],
+                },
+                {
+                    "key": "write",
+                    "name": "Write report",
+                    "depends_on": ["research"],
+                },
+                {
+                    "key": "research",
+                    "name": "Research topic",
+                    "depends_on": [],
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+
+    created = response.json()
+    run_id = created["id"]
+
+    tasks_by_key = {
+        task["key"]: task for task in created["tasks"]
+    }
+
+    # Verify the create response contains the declared dependencies.
+    assert tasks_by_key["publish"]["depends_on"] == ["write"]
+    assert tasks_by_key["write"]["depends_on"] == ["research"]
+    assert tasks_by_key["research"]["depends_on"] == []
+
+    # Retrieve the workflow again to verify dependencies were persisted.
+    retrieve_response = workflow_client.get(
+        f"/api/v1/runs/{run_id}",
+        headers=headers,
+    )
+
+    assert retrieve_response.status_code == 200
+
+    retrieved_tasks = {
+        task["key"]: task
+        for task in retrieve_response.json()["tasks"]
+    }
+
+    assert retrieved_tasks["publish"]["depends_on"] == ["write"]
+    assert retrieved_tasks["write"]["depends_on"] == ["research"]
+    assert retrieved_tasks["research"]["depends_on"] == []

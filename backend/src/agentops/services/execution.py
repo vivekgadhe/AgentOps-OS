@@ -1,4 +1,3 @@
-
 """Core workflow execution service."""
 
 from __future__ import annotations
@@ -10,6 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,10 +24,22 @@ from agentops.db.models import (
     WorkflowStatus,
 )
 from agentops.services.task_runner import run_task
+from agentops.services.tool_registry import (
+    ToolDefinition,
+    ToolNotFoundError,
+    ToolRegistry,
+)
 
 logger = logging.getLogger(__name__)
 
 TaskHandler = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+class _FlexibleToolPayload(BaseModel):
+    """Compatibility schema for handlers without explicit contracts."""
+
+    model_config = ConfigDict(extra="allow")
+
 
 def _topological_order(
     task_keys: list[str],
@@ -39,34 +51,23 @@ def _topological_order(
     if len(key_set) != len(task_keys):
         raise ValueError("Workflow contains duplicate task keys")
 
-    children: dict[str, list[str]] = {
-        key: [] for key in task_keys
-    }
+    children: dict[str, list[str]] = {key: [] for key in task_keys}
     in_degree: dict[str, int] = {}
 
     for key in task_keys:
         prerequisites = dependencies_by_key.get(key, [])
 
-        unknown = [
-            dependency
-            for dependency in prerequisites
-            if dependency not in key_set
-        ]
+        unknown = [dependency for dependency in prerequisites if dependency not in key_set]
 
         if unknown:
-            raise ValueError(
-                f"Task '{key}' depends on unknown task "
-                f"'{unknown[0]}'"
-            )
+            raise ValueError(f"Task '{key}' depends on unknown task '{unknown[0]}'")
 
         in_degree[key] = len(prerequisites)
 
         for prerequisite in prerequisites:
             children[prerequisite].append(key)
 
-    ready = deque(
-        key for key in task_keys if in_degree[key] == 0
-    )
+    ready = deque(key for key in task_keys if in_degree[key] == 0)
     ordered: list[str] = []
 
     while ready:
@@ -80,33 +81,52 @@ def _topological_order(
                 ready.append(child)
 
     if len(ordered) != len(task_keys):
-        cyclic = [
-            key for key in task_keys if in_degree[key] > 0
-        ]
-        raise ValueError(
-            "Workflow contains a dependency cycle involving: "
-            + ", ".join(cyclic)
-        )
+        cyclic = [key for key in task_keys if in_degree[key] > 0]
+        raise ValueError("Workflow contains a dependency cycle involving: " + ", ".join(cyclic))
 
     return ordered
 
+
 class ExecutionError(Exception):
     """Raised when a workflow cannot be executed."""
-    
+
+
 class ExecutionService:
     """Create workflows and execute tasks through registered handlers."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
         self._handlers: dict[str, TaskHandler] = {}
+        self._tool_registry = ToolRegistry()
 
-    def register_handler(self, name: str, handler: TaskHandler) -> None:
-        """Register a trusted handler under a unique name."""
-        if not name.strip():
+    def register_tool(self, definition: ToolDefinition) -> None:
+        """Register a tool with explicit input and output contracts."""
+        self._tool_registry.register(definition)
+        self._handlers[definition.name] = definition.handler
+
+    def register_handler(
+        self,
+        name: str,
+        handler: TaskHandler,
+    ) -> None:
+        """Register a handler using a permissive compatibility schema."""
+        if not isinstance(name, str) or not name.strip():
             raise ValueError("Handler name cannot be blank")
-        if name in self._handlers:
-            raise ValueError(f"Handler already registered: {name}")
-        self._handlers[name] = handler
+
+        if not callable(handler):
+            raise ValueError("Handler must be callable")
+
+        normalized_name = name.strip()
+
+        self.register_tool(
+            ToolDefinition(
+                name=normalized_name,
+                description=f"Task handler for {normalized_name}",
+                input_model=_FlexibleToolPayload,
+                output_model=_FlexibleToolPayload,
+                handler=handler,
+            )
+        )
 
     def create_workflow(
         self,
@@ -139,13 +159,9 @@ class ExecutionService:
                 raise ValueError(f"Duplicate task key: {key}")
 
             if not isinstance(name, str) or not name.strip():
-                raise ValueError(
-                    f"Task {key} must have a non-empty name"
-                )
+                raise ValueError(f"Task {key} must have a non-empty name")
 
-            if tool_name is not None and (
-                not isinstance(tool_name, str) or not tool_name.strip()
-            ):
+            if tool_name is not None and (not isinstance(tool_name, str) or not tool_name.strip()):
                 raise ValueError(f"Task {key} has an invalid tool name")
 
             normalized_task = dict(task)
@@ -167,40 +183,25 @@ class ExecutionService:
             raw_dependencies = task.get("depends_on", [])
 
             if not isinstance(raw_dependencies, list):
-                raise ValueError(
-                    f"Task '{key}' dependencies must be a list"
-                )
+                raise ValueError(f"Task '{key}' dependencies must be a list")
 
             dependencies: list[str] = []
             seen_dependencies: set[str] = set()
 
             for raw_dependency in raw_dependencies:
-                if (
-                    not isinstance(raw_dependency, str)
-                    or not raw_dependency.strip()
-                ):
-                    raise ValueError(
-                        f"Task '{key}' has an invalid dependency key"
-                    )
+                if not isinstance(raw_dependency, str) or not raw_dependency.strip():
+                    raise ValueError(f"Task '{key}' has an invalid dependency key")
 
                 dependency = raw_dependency.strip()
 
                 if dependency == key:
-                    raise ValueError(
-                        f"Task '{key}' cannot depend on itself"
-                    )
+                    raise ValueError(f"Task '{key}' cannot depend on itself")
 
                 if dependency not in seen_keys:
-                    raise ValueError(
-                        f"Task '{key}' depends on unknown task "
-                        f"'{dependency}'"
-                    )
+                    raise ValueError(f"Task '{key}' depends on unknown task '{dependency}'")
 
                 if dependency in seen_dependencies:
-                    raise ValueError(
-                        f"Task '{key}' lists dependency "
-                        f"'{dependency}' more than once"
-                    )
+                    raise ValueError(f"Task '{key}' lists dependency '{dependency}' more than once")
 
                 dependencies.append(dependency)
                 seen_dependencies.add(dependency)
@@ -271,18 +272,14 @@ class ExecutionService:
     def execute_workflow(self, workflow_id: uuid.UUID) -> WorkflowRun:
         """Execute tasks in dependency order and skip blocked tasks."""
         workflow = self.session.scalar(
-            select(WorkflowRun)
-            .where(WorkflowRun.id == workflow_id)
-            .with_for_update()
+            select(WorkflowRun).where(WorkflowRun.id == workflow_id).with_for_update()
         )
 
         if workflow is None:
             raise ExecutionError("Workflow not found")
 
         if workflow.status != WorkflowStatus.PENDING.value:
-            raise ExecutionError(
-                f"Workflow cannot start from status '{workflow.status}'"
-            )
+            raise ExecutionError(f"Workflow cannot start from status '{workflow.status}'")
 
         tasks = list(
             self.session.scalars(
@@ -296,22 +293,14 @@ class ExecutionService:
         if not tasks:
             raise ExecutionError("Workflow has no tasks")
 
-        tasks_by_id = {
-            task.id: task for task in tasks
-        }
-        tasks_by_key = {
-            task.key: task for task in tasks
-        }
+        tasks_by_id = {task.id: task for task in tasks}
+        tasks_by_key = {task.key: task for task in tasks}
 
-        dependencies_by_key: dict[str, list[str]] = {
-            task.key: [] for task in tasks
-        }
+        dependencies_by_key: dict[str, list[str]] = {task.key: [] for task in tasks}
 
         dependency_edges = list(
             self.session.scalars(
-                select(TaskDependency).where(
-                    TaskDependency.workflow_run_id == workflow.id
-                )
+                select(TaskDependency).where(TaskDependency.workflow_run_id == workflow.id)
             ).all()
         )
 
@@ -320,9 +309,7 @@ class ExecutionService:
             prerequisite = tasks_by_id.get(edge.depends_on_task_id)
 
             if task is None or prerequisite is None:
-                raise ExecutionError(
-                    "Workflow contains an invalid dependency reference"
-                )
+                raise ExecutionError("Workflow contains an invalid dependency reference")
 
             dependencies_by_key[task.key].append(prerequisite.key)
 
@@ -355,8 +342,7 @@ class ExecutionService:
                 blocked_by = [
                     dependency_key
                     for dependency_key in dependencies_by_key[task.key]
-                    if tasks_by_key[dependency_key].status
-                    != TaskStatus.SUCCEEDED.value
+                    if tasks_by_key[dependency_key].status != TaskStatus.SUCCEEDED.value
                 ]
 
                 if blocked_by:
@@ -397,13 +383,8 @@ class ExecutionService:
             if first_task_error is not None:
                 raise first_task_error
 
-            if any(
-                task.status != TaskStatus.SUCCEEDED.value
-                for task in tasks
-            ):
-                raise ExecutionError(
-                    "Workflow contains tasks that did not succeed"
-                )
+            if any(task.status != TaskStatus.SUCCEEDED.value for task in tasks):
+                raise ExecutionError("Workflow contains tasks that did not succeed")
 
             workflow.status = WorkflowStatus.SUCCEEDED.value
             workflow.finished_at = datetime.now(UTC)
@@ -443,9 +424,15 @@ class ExecutionService:
     def _execute_task(self, workflow: WorkflowRun, task: TaskRun) -> None:
         """Run a task with bounded retries and persist its outcome."""
         tool_name = task.tool_name
-        handler = self._handlers.get(tool_name) if tool_name else None
+        tool_definition = None
 
-        if handler is None:
+        if tool_name:
+            try:
+                tool_definition = self._tool_registry.get(tool_name)
+            except ToolNotFoundError:
+                tool_definition = None
+
+        if tool_definition is None:
             task.status = TaskStatus.FAILED.value
             task.error = {
                 "type": "HandlerNotFound",
@@ -466,9 +453,7 @@ class ExecutionService:
             )
             self.session.flush()
 
-            raise ExecutionError(
-                f"No handler registered for task '{task.key}'"
-            )
+            raise ExecutionError(f"No handler registered for task '{task.key}'")
 
         task.started_at = datetime.now(UTC)
         task.finished_at = None
@@ -482,11 +467,7 @@ class ExecutionService:
                 workflow.id,
                 task_run_id=task.id,
                 event_type="task.started" if attempt == 1 else "task.retrying",
-                message=(
-                    "Task execution started"
-                    if attempt == 1
-                    else "Retrying failed task"
-                ),
+                message=("Task execution started" if attempt == 1 else "Retrying failed task"),
                 data={
                     "task_key": task.key,
                     "tool_name": tool_name,
@@ -497,10 +478,23 @@ class ExecutionService:
             self.session.flush()
 
             try:
-                result = run_task(
-                    handler,
+                assert tool_name is not None
+                assert tool_definition is not None
+
+                validated_input = self._tool_registry.validate_input(
+                    tool_name,
                     task.input_data or {},
+                )
+
+                result = run_task(
+                    tool_definition.handler,
+                    validated_input,
                     timeout_seconds=task.timeout_seconds,
+                )
+
+                result = self._tool_registry.validate_output(
+                    tool_name,
+                    result,
                 )
 
                 if not isinstance(result, dict):
@@ -568,7 +562,6 @@ class ExecutionService:
         raise ExecutionError(
             f"Task '{task.key}' failed after {task.max_attempts} attempts"
         ) from last_error
-
 
     def _record_event(
         self,

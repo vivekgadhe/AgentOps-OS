@@ -1,8 +1,8 @@
 """OpenAI-backed text generation service."""
 
-from typing import TypeVar
+from typing import Any, TypeVar
 
-from openai import OpenAI, OpenAIError
+from openai import APITimeoutError, OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from agentops.core.config import Settings, get_settings
@@ -20,6 +20,18 @@ class LLMConfigurationError(LLMError):
 
 class LLMProviderError(LLMError):
     """Raised when the model provider fails or returns unusable output."""
+
+
+class LLMTimeoutError(LLMProviderError):
+    """Raised when an OpenAI request times out."""
+
+
+class LLMRefusalError(LLMProviderError):
+    """Raised when the model refuses a request."""
+
+
+class LLMIncompleteResponseError(LLMProviderError):
+    """Raised when the model response is incomplete."""
 
 
 DEFAULT_INSTRUCTIONS = (
@@ -45,11 +57,7 @@ class LLMService:
         *,
         instructions: str | None = None,
     ) -> str:
-        """Generate text and return the cleaned response.
-
-        An injected client allows tests to run without API credentials or
-        external requests.
-        """
+        """Generate text and return the cleaned response."""
         normalized_prompt, resolved_instructions = self._prepare_request(
             prompt,
             instructions,
@@ -62,8 +70,12 @@ class LLMService:
                 instructions=resolved_instructions,
                 input=normalized_prompt,
             )
+        except APITimeoutError as exc:
+            raise LLMTimeoutError("The OpenAI provider request timed out.") from exc
         except OpenAIError as exc:
             raise LLMProviderError("The OpenAI provider request failed.") from exc
+
+        self._check_response(response)
 
         output = response.output_text
 
@@ -79,11 +91,7 @@ class LLMService:
         output_model: type[ModelT],
         instructions: str | None = None,
     ) -> ModelT:
-        """Generate a response constrained to a Pydantic model.
-
-        Refusals, incomplete results, and responses without a successfully
-        parsed structured result are reported as provider errors.
-        """
+        """Generate a response constrained to a Pydantic model."""
         normalized_prompt, resolved_instructions = self._prepare_request(
             prompt,
             instructions,
@@ -97,12 +105,16 @@ class LLMService:
                 input=normalized_prompt,
                 text_format=output_model,
             )
+        except APITimeoutError as exc:
+            raise LLMTimeoutError("The OpenAI provider request timed out.") from exc
         except OpenAIError as exc:
             raise LLMProviderError("The OpenAI provider request failed.") from exc
         except (ValidationError, ValueError) as exc:
             raise LLMProviderError(
                 "The OpenAI response could not be parsed into the required schema."
             ) from exc
+
+        self._check_response(response)
 
         parsed = response.output_parsed
 
@@ -116,7 +128,7 @@ class LLMService:
         prompt: str,
         instructions: str | None,
     ) -> tuple[str, str]:
-        """Validate and normalize common request fields."""
+        """Validate and normalize request fields."""
         normalized_prompt = prompt.strip()
 
         if not normalized_prompt:
@@ -131,6 +143,42 @@ class LLMService:
                 raise ValueError("Instructions cannot be blank.")
 
         return normalized_prompt, resolved_instructions
+
+    @staticmethod
+    def _check_response(response: Any) -> None:
+        """Reject unsuccessful, incomplete, or refused model responses."""
+        response_status = getattr(response, "status", None)
+
+        if response_status == "incomplete":
+            details = getattr(response, "incomplete_details", None)
+            reason = getattr(details, "reason", None)
+
+            message = "The OpenAI provider returned an incomplete response."
+
+            if reason:
+                message += f" Reason: {reason}."
+
+            raise LLMIncompleteResponseError(message)
+
+        if response_status == "failed":
+            raise LLMProviderError("The OpenAI provider returned a failed response.")
+
+        output = getattr(response, "output", None)
+
+        if not isinstance(output, list):
+            return
+
+        for item in output:
+            if getattr(item, "type", None) != "message":
+                continue
+
+            content = getattr(item, "content", None)
+
+            if not isinstance(content, list):
+                continue
+
+            if any(getattr(part, "type", None) == "refusal" for part in content):
+                raise LLMRefusalError("The model refused to fulfill the request.")
 
     def _get_client(self) -> OpenAI:
         """Create the provider client lazily when credentials are available."""

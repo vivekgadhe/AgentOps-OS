@@ -70,7 +70,10 @@ def execute_workflow(
     service = ExecutionService(db)
     register_builtin_handlers(service)
     try:
-        service.execute_workflow(workflow.id)
+        service.execute_workflow(
+            workflow.id,
+            actor_role=user.role,
+        )
     except ExecutionError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -120,19 +123,13 @@ def _to_response(
     db: Session,
 ) -> WorkflowResponse:
     """Convert a workflow and its dependencies to the response schema."""
-    task_by_id = {
-        task.id: task for task in workflow.tasks
-    }
+    task_by_id = {task.id: task for task in workflow.tasks}
 
-    dependencies_by_task_id: dict[UUID, list[str]] = {
-        task.id: [] for task in workflow.tasks
-    }
+    dependencies_by_task_id: dict[UUID, list[str]] = {task.id: [] for task in workflow.tasks}
 
     edges = list(
         db.scalars(
-            select(TaskDependency).where(
-                TaskDependency.workflow_run_id == workflow.id
-            )
+            select(TaskDependency).where(TaskDependency.workflow_run_id == workflow.id)
         ).all()
     )
 
@@ -140,17 +137,11 @@ def _to_response(
         prerequisite = task_by_id.get(edge.depends_on_task_id)
 
         if prerequisite is not None:
-            dependencies_by_task_id[edge.task_id].append(
-                prerequisite.key
-            )
+            dependencies_by_task_id[edge.task_id].append(prerequisite.key)
 
     task_responses = [
         TaskResponse.model_validate(task).model_copy(
-            update={
-                "depends_on": sorted(
-                    dependencies_by_task_id[task.id]
-                )
-            }
+            update={"depends_on": sorted(dependencies_by_task_id[task.id])}
         )
         for task in workflow.tasks
     ]

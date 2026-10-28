@@ -1,7 +1,8 @@
-"""Integration tests for authenticated workflow execution."""
+"""Integration tests for authenticated workflow and tool execution."""
 
 from collections.abc import Iterator
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from agentops.core.security import create_access_token, hash_password
 from agentops.db.models.user import User
+from agentops.db.models.workflow import ExecutionEvent
 from agentops.db.session import create_db_engine
 from agentops.main import create_app
 
@@ -18,38 +20,45 @@ pytestmark = pytest.mark.integration
 
 TEST_PASSWORD = "Integration-Test-Password-123!"
 
+
 @pytest.fixture
 def workflow_client(integration_settings) -> Iterator[TestClient]:
     """Create a client connected to the isolated integration database."""
     with TestClient(create_app(integration_settings)) as client:
         yield client
 
+
 @pytest.fixture
 def workflow_users(integration_settings) -> list[tuple[UUID, str]]:
-    """Create two active users for workflow ownership tests."""
+    """Create deterministic viewer and operator accounts."""
     engine = create_db_engine(integration_settings)
     users: list[tuple[UUID, str]] = []
 
+    accounts = (
+        ("workflow-owner@example.test", "viewer"),
+        ("workflow-other@example.test", "viewer"),
+        ("workflow-operator@example.test", "operator"),
+    )
 
     try:
         with Session(engine) as session:
-            for email in (
-                "workflow-owner@example.test",
-                "workflow-other@example.test",
-            ):
-                user = session.scalar(
-                    select(User).where(User.email == email)
-                )
+            for email, role in accounts:
+                user = session.scalar(select(User).where(User.email == email))
 
                 if user is None:
                     user = User(
                         email=email,
                         password_hash=hash_password(TEST_PASSWORD),
-                        role="viewer",
+                        role=role,
                         is_active=True,
                     )
                     session.add(user)
                     session.flush()
+                else:
+                    # Keep these dedicated test accounts consistent across
+                    # repeated integration-test runs.
+                    user.role = role
+                    user.is_active = True
 
                 users.append((user.id, user.email))
 
@@ -60,17 +69,25 @@ def workflow_users(integration_settings) -> list[tuple[UUID, str]]:
     return users
 
 
-def auth_headers(integration_settings, user_id: UUID) -> dict[str, str]:
-    """Create an access token for an existing user."""
+def auth_headers(
+    integration_settings,
+    user_id: UUID,
+    role: str = "viewer",
+) -> dict[str, str]:
+    """Create an access token for an existing test user."""
     token = create_access_token(
         subject=str(user_id),
         secret=integration_settings.jwt_secret.get_secret_value(),
         expires_in=timedelta(minutes=15),
-        role="viewer",
+        role=role,
     )
     return {"Authorization": f"Bearer {token}"}
 
-def create_workflow(client: TestClient, headers: dict[str, str]):
+
+def create_workflow(
+    client: TestClient,
+    headers: dict[str, str],
+):
     """Create a workflow containing one summarization task."""
     return client.post(
         "/api/v1/runs",
@@ -88,8 +105,9 @@ def create_workflow(client: TestClient, headers: dict[str, str]):
         },
     )
 
+
 def test_workflow_requires_authentication(
-workflow_client: TestClient,
+    workflow_client: TestClient,
 ) -> None:
     """Reject workflow creation without an access token."""
     response = workflow_client.post(
@@ -107,19 +125,17 @@ workflow_client: TestClient,
         },
     )
 
-
     assert response.status_code == 401
 
 
 def test_create_and_retrieve_workflow(
-workflow_client: TestClient,
-integration_settings,
-workflow_users: list[tuple[UUID, str]],
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
 ) -> None:
     """Allow the owner to create and retrieve a workflow."""
     owner_id, _ = workflow_users[0]
     headers = auth_headers(integration_settings, owner_id)
-
 
     response = create_workflow(workflow_client, headers)
 
@@ -130,6 +146,7 @@ workflow_users: list[tuple[UUID, str]],
     assert created["status"] == "pending"
     assert len(created["tasks"]) == 1
     assert created["tasks"][0]["key"] == "summarize"
+    assert created["tasks"][0]["depends_on"] == []
 
     retrieve_response = workflow_client.get(
         f"/api/v1/runs/{created['id']}",
@@ -141,14 +158,13 @@ workflow_users: list[tuple[UUID, str]],
 
 
 def test_user_cannot_access_another_users_workflow(
-workflow_client: TestClient,
-integration_settings,
-workflow_users: list[tuple[UUID, str]],
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
 ) -> None:
     """Hide a workflow from users other than its owner."""
     owner_id, _ = workflow_users[0]
     other_id, _ = workflow_users[1]
-
 
     create_response = create_workflow(
         workflow_client,
@@ -167,14 +183,13 @@ workflow_users: list[tuple[UUID, str]],
 
 
 def test_execute_workflow_persists_task_output(
-workflow_client: TestClient,
-integration_settings,
-workflow_users: list[tuple[UUID, str]],
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
 ) -> None:
     """Execute a registered task and verify its persisted result."""
     owner_id, _ = workflow_users[0]
     headers = auth_headers(integration_settings, owner_id)
-
 
     create_response = create_workflow(workflow_client, headers)
 
@@ -202,13 +217,14 @@ workflow_users: list[tuple[UUID, str]],
     )
 
     assert retrieve_response.status_code == 200
-    saved = retrieve_response.json()
 
+    saved = retrieve_response.json()
     assert saved["status"] == "succeeded"
     assert saved["tasks"][0]["output_data"] == {
         "summary": "Hello AgentOps",
         "character_count": 14,
     }
+
 
 def test_workflow_dependencies_are_persisted_and_retrieved(
     workflow_client: TestClient,
@@ -250,16 +266,12 @@ def test_workflow_dependencies_are_persisted_and_retrieved(
     created = response.json()
     run_id = created["id"]
 
-    tasks_by_key = {
-        task["key"]: task for task in created["tasks"]
-    }
+    tasks_by_key = {task["key"]: task for task in created["tasks"]}
 
-    # Verify the create response contains the declared dependencies.
     assert tasks_by_key["publish"]["depends_on"] == ["write"]
     assert tasks_by_key["write"]["depends_on"] == ["research"]
     assert tasks_by_key["research"]["depends_on"] == []
 
-    # Retrieve the workflow again to verify dependencies were persisted.
     retrieve_response = workflow_client.get(
         f"/api/v1/runs/{run_id}",
         headers=headers,
@@ -267,11 +279,156 @@ def test_workflow_dependencies_are_persisted_and_retrieved(
 
     assert retrieve_response.status_code == 200
 
-    retrieved_tasks = {
-        task["key"]: task
-        for task in retrieve_response.json()["tasks"]
-    }
+    retrieved_tasks = {task["key"]: task for task in retrieve_response.json()["tasks"]}
 
     assert retrieved_tasks["publish"]["depends_on"] == ["write"]
     assert retrieved_tasks["write"]["depends_on"] == ["research"]
     assert retrieved_tasks["research"]["depends_on"] == []
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "input_data", "expected_output"),
+    [
+        (
+            "text_statistics",
+            {"text": "AgentOps tools\nAI agents"},
+            {
+                "word_count": 4,
+                "character_count": 24,
+                "line_count": 2,
+            },
+        ),
+        (
+            "normalize_whitespace",
+            {"text": "  AgentOps \n\t tools   "},
+            {"normalized_text": "AgentOps tools"},
+        ),
+        (
+            "find_matching_lines",
+            {
+                "text": ("Alpha systems\nagent tools\nAI AGENT platform\nNo match"),
+                "query": "agent",
+            },
+            {
+                "matches": [
+                    "agent tools",
+                    "AI AGENT platform",
+                ],
+                "match_count": 2,
+            },
+        ),
+    ],
+    ids=[
+        "text-statistics",
+        "normalize-whitespace",
+        "find-matching-lines",
+    ],
+)
+def test_builtin_tool_executes_through_api(
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
+    tool_name: str,
+    input_data: dict[str, Any],
+    expected_output: dict[str, Any],
+) -> None:
+    """Execute each additional built-in tool through the workflow API."""
+    operator_id, _ = workflow_users[2]
+    headers = auth_headers(
+        integration_settings,
+        operator_id,
+        role="operator",
+    )
+
+    create_response = workflow_client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "goal": f"Run the {tool_name} tool",
+            "tasks": [
+                {
+                    "key": "task",
+                    "name": f"Run {tool_name}",
+                    "tool_name": tool_name,
+                    "input_data": input_data,
+                }
+            ],
+        },
+    )
+
+    assert create_response.status_code == 201, create_response.text
+    run_id = create_response.json()["id"]
+
+    execute_response = workflow_client.post(
+        f"/api/v1/runs/{run_id}/execute",
+        headers=headers,
+    )
+
+    assert execute_response.status_code == 200, execute_response.text
+
+    result = execute_response.json()
+
+    assert result["status"] == "succeeded", result
+    assert result["tasks"][0]["status"] == "succeeded"
+    assert result["tasks"][0]["output_data"] == expected_output
+
+
+def test_viewer_cannot_execute_restricted_tool(
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
+) -> None:
+    """Reject viewer access to tools restricted to operators and admins."""
+    viewer_id, _ = workflow_users[0]
+    headers = auth_headers(integration_settings, viewer_id)
+
+    create_response = workflow_client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "goal": "Attempt restricted tool execution",
+            "tasks": [
+                {
+                    "key": "statistics",
+                    "name": "Calculate statistics",
+                    "tool_name": "text_statistics",
+                    "input_data": {"text": "Sensitive operation"},
+                }
+            ],
+        },
+    )
+
+    assert create_response.status_code == 201, create_response.text
+    run_id = create_response.json()["id"]
+
+    execute_response = workflow_client.post(
+        f"/api/v1/runs/{run_id}/execute",
+        headers=headers,
+    )
+
+    assert execute_response.status_code == 200, execute_response.text
+
+    result = execute_response.json()
+    assert result["status"] == "failed"
+
+    task = result["tasks"][0]
+    assert task["status"] == "failed"
+    assert task["error"]["type"] == "ToolAccessDeniedError"
+
+    engine = create_db_engine(integration_settings)
+
+    try:
+        with Session(engine) as session:
+            event = session.scalar(
+                select(ExecutionEvent).where(
+                    ExecutionEvent.workflow_run_id == UUID(run_id),
+                    ExecutionEvent.event_type == "tool.access_denied",
+                )
+            )
+
+            assert event is not None
+            assert event.level == "warning"
+            assert event.data["actor_role"] == "viewer"
+            assert event.data["tool_name"] == "text_statistics"
+    finally:
+        engine.dispose()

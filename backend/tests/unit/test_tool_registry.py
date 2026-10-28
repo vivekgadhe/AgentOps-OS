@@ -144,3 +144,20 @@ def test_tool_listing_is_sorted(
         "add_numbers",
         "greet",
     ]
+
+
+def test_authorize_allows_permitted_role(
+    registry: ToolRegistry,
+) -> None:
+    """Allow an operator to execute a default tool."""
+    assert registry.authorize("greet", "operator").name == "greet"
+
+
+def test_authorize_rejects_viewer_for_restricted_tool(
+    registry: ToolRegistry,
+) -> None:
+    """Reject a role that is not in the tool's permission set."""
+    from agentops.services.tool_registry import ToolAccessDeniedError
+
+    with pytest.raises(ToolAccessDeniedError, match="not permitted"):
+        registry.authorize("greet", "viewer")

@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
@@ -10,11 +11,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agentops.api.v1.runs import get_workflow_planner
 from agentops.core.security import create_access_token, hash_password
 from agentops.db.models.user import User
 from agentops.db.models.workflow import ExecutionEvent
 from agentops.db.session import create_db_engine
 from agentops.main import create_app
+from agentops.schemas.workflows import TaskCreate, WorkflowCreate
 
 pytestmark = pytest.mark.integration
 
@@ -306,7 +309,7 @@ def test_workflow_dependencies_are_persisted_and_retrieved(
         (
             "find_matching_lines",
             {
-                "text": ("Alpha systems\nagent tools\nAI AGENT platform\nNo match"),
+                "text": "Alpha systems\nagent tools\nAI AGENT platform\nNo match",
                 "query": "agent",
             },
             {
@@ -432,3 +435,92 @@ def test_viewer_cannot_execute_restricted_tool(
             assert event.data["tool_name"] == "text_statistics"
     finally:
         engine.dispose()
+
+
+def test_planned_workflow_can_be_saved_without_execution(
+    workflow_client: TestClient,
+    integration_settings,
+    workflow_users: list[tuple[UUID, str]],
+) -> None:
+    """Allow a reviewed AI plan to be saved while remaining pending."""
+    owner_id, _ = workflow_users[0]
+    headers = auth_headers(integration_settings, owner_id)
+
+    proposed_plan = WorkflowCreate(
+        goal="Summarize a greeting",
+        tasks=[
+            TaskCreate(
+                key="summarize",
+                name="Summarize greeting",
+                tool_name="summarize_input",
+                input_data={"text": "Hello from a proposed plan"},
+                max_attempts=3,
+                timeout_seconds=30,
+                depends_on=[],
+            )
+        ],
+    )
+
+    planner = Mock()
+    planner.plan.return_value = proposed_plan
+
+    app = workflow_client.app
+    app.dependency_overrides[get_workflow_planner] = lambda: planner
+
+    try:
+        plan_response = workflow_client.post(
+            "/api/v1/runs/plan",
+            headers=headers,
+            json={"goal": "Summarize a greeting"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_workflow_planner, None)
+
+    assert plan_response.status_code == 200, plan_response.text
+
+    plan_data = plan_response.json()
+
+    # A proposed plan is not yet a persisted workflow.
+    assert plan_data["goal"] == "Summarize a greeting"
+    assert "id" not in plan_data
+    assert "status" not in plan_data
+
+    planner.plan.assert_called_once_with(
+        "Summarize a greeting",
+        actor_role="viewer",
+    )
+
+    # Submitting the reviewed plan to the existing create endpoint is the
+    # explicit approval and persistence step.
+    create_response = workflow_client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json=plan_data,
+    )
+
+    assert create_response.status_code == 201, create_response.text
+
+    saved = create_response.json()
+    run_id = saved["id"]
+
+    assert saved["goal"] == "Summarize a greeting"
+    assert saved["status"] == "pending"
+    assert saved["tasks"][0]["status"] == "pending"
+    assert saved["tasks"][0]["output_data"] is None
+    assert saved["tasks"][0]["attempt_count"] == 0
+    assert saved["tasks"][0]["finished_at"] is None
+
+    # Confirm the saved workflow remains pending when retrieved.
+    retrieve_response = workflow_client.get(
+        f"/api/v1/runs/{run_id}",
+        headers=headers,
+    )
+
+    assert retrieve_response.status_code == 200
+
+    retrieved = retrieve_response.json()
+    assert retrieved["id"] == run_id
+    assert retrieved["status"] == "pending"
+    assert retrieved["tasks"][0]["status"] == "pending"
+    assert retrieved["tasks"][0]["output_data"] is None
+    assert retrieved["tasks"][0]["attempt_count"] == 0

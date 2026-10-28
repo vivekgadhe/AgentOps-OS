@@ -17,7 +17,6 @@ def test_prod_rejects_the_default_secret() -> None:
 
 
 def test_test_environment_rejects_the_default_secret() -> None:
-    # Regression test: non-dev environments always require an explicit strong secret.
     with pytest.raises(ValidationError):
         Settings(_env_file=None, app_env="test")
 
@@ -44,3 +43,45 @@ def test_database_url_must_use_psycopg3_driver() -> None:
 
 def test_log_level_is_case_insensitive() -> None:
     assert Settings(_env_file=None, log_level="debug").log_level == "DEBUG"
+
+
+def test_llm_settings_have_safe_defaults() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="dev",
+        openai_api_key=None,
+        openai_model="gpt-5.5",
+        llm_timeout_s=30,
+    )
+
+    assert settings.openai_api_key is None
+    assert settings.openai_model == "gpt-5.5"
+    assert settings.llm_timeout_s == 30
+
+
+def test_llm_settings_accept_explicit_values() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="dev",
+        openai_api_key="unit-test-key",
+        openai_model="  unit-test-model  ",
+        llm_timeout_s=45,
+    )
+
+    assert settings.openai_api_key is not None
+    assert settings.openai_api_key.get_secret_value() == "unit-test-key"
+    assert settings.openai_model == "unit-test-model"
+    assert settings.llm_timeout_s == 45
+
+
+def test_openai_model_rejects_blank_value() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, openai_model="   ")
+
+
+@pytest.mark.parametrize("timeout", [0, 301])
+def test_llm_timeout_must_be_between_one_and_300_seconds(
+    timeout: int,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, llm_timeout_s=timeout)

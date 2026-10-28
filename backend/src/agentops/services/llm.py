@@ -1,8 +1,13 @@
 """OpenAI-backed text generation service."""
 
+from typing import TypeVar
+
 from openai import OpenAI, OpenAIError
+from pydantic import BaseModel, ValidationError
 
 from agentops.core.config import Settings, get_settings
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class LLMError(RuntimeError):
@@ -14,7 +19,7 @@ class LLMConfigurationError(LLMError):
 
 
 class LLMProviderError(LLMError):
-    """Raised when the model provider fails or returns no usable text."""
+    """Raised when the model provider fails or returns unusable output."""
 
 
 DEFAULT_INSTRUCTIONS = (
@@ -23,7 +28,7 @@ DEFAULT_INSTRUCTIONS = (
 
 
 class LLMService:
-    """Generate text using a configured OpenAI model."""
+    """Generate text and structured responses using an OpenAI model."""
 
     def __init__(
         self,
@@ -40,12 +45,81 @@ class LLMService:
         *,
         instructions: str | None = None,
     ) -> str:
-        """Generate text for a prompt and return the validated text result.
+        """Generate text and return the cleaned response.
 
-        An injected client allows unit tests to run without credentials or
-        external API requests.
+        An injected client allows tests to run without API credentials or
+        external requests.
         """
-        if not prompt.strip():
+        normalized_prompt, resolved_instructions = self._prepare_request(
+            prompt,
+            instructions,
+        )
+        client = self._get_client()
+
+        try:
+            response = client.responses.create(
+                model=self._settings.openai_model,
+                instructions=resolved_instructions,
+                input=normalized_prompt,
+            )
+        except OpenAIError as exc:
+            raise LLMProviderError("The OpenAI provider request failed.") from exc
+
+        output = response.output_text
+
+        if not isinstance(output, str) or not output.strip():
+            raise LLMProviderError("The OpenAI provider returned no text output.")
+
+        return output.strip()
+
+    def generate_structured(
+        self,
+        prompt: str,
+        *,
+        output_model: type[ModelT],
+        instructions: str | None = None,
+    ) -> ModelT:
+        """Generate a response constrained to a Pydantic model.
+
+        Refusals, incomplete results, and responses without a successfully
+        parsed structured result are reported as provider errors.
+        """
+        normalized_prompt, resolved_instructions = self._prepare_request(
+            prompt,
+            instructions,
+        )
+        client = self._get_client()
+
+        try:
+            response = client.responses.parse(
+                model=self._settings.openai_model,
+                instructions=resolved_instructions,
+                input=normalized_prompt,
+                text_format=output_model,
+            )
+        except OpenAIError as exc:
+            raise LLMProviderError("The OpenAI provider request failed.") from exc
+        except (ValidationError, ValueError) as exc:
+            raise LLMProviderError(
+                "The OpenAI response could not be parsed into the required schema."
+            ) from exc
+
+        parsed = response.output_parsed
+
+        if not isinstance(parsed, output_model):
+            raise LLMProviderError("The OpenAI provider returned no valid structured output.")
+
+        return parsed
+
+    @staticmethod
+    def _prepare_request(
+        prompt: str,
+        instructions: str | None,
+    ) -> tuple[str, str]:
+        """Validate and normalize common request fields."""
+        normalized_prompt = prompt.strip()
+
+        if not normalized_prompt:
             raise ValueError("Prompt cannot be blank.")
 
         if instructions is None:
@@ -56,24 +130,7 @@ class LLMService:
             if not resolved_instructions:
                 raise ValueError("Instructions cannot be blank.")
 
-        client = self._get_client()
-
-        try:
-            response = client.responses.create(
-                model=self._settings.openai_model,
-                instructions=resolved_instructions,
-                input=prompt.strip(),
-            )
-        except OpenAIError as exc:
-            # Avoid exposing provider response details to API consumers.
-            raise LLMProviderError("The OpenAI provider request failed.") from exc
-
-        output = response.output_text
-
-        if not isinstance(output, str) or not output.strip():
-            raise LLMProviderError("The OpenAI provider returned no text output.")
-
-        return output.strip()
+        return normalized_prompt, resolved_instructions
 
     def _get_client(self) -> OpenAI:
         """Create the provider client lazily when credentials are available."""

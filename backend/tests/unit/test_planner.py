@@ -1,10 +1,10 @@
 """Unit tests for validated AI workflow planning."""
 
 import json
-from typing import Any
+from typing import Any, TypeVar, cast
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agentops.schemas.planning import WorkflowPlan
 from agentops.services.planner import (
@@ -13,6 +13,8 @@ from agentops.services.planner import (
     WorkflowPlanner,
 )
 from agentops.services.tool_registry import ToolDefinition, ToolRegistry
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class TextInput(BaseModel):
@@ -37,22 +39,26 @@ def echo_text(data: dict[str, Any]) -> dict[str, Any]:
 
 
 class FakeLLM:
-    """Return a predetermined response without contacting a provider."""
+    """Return a prepared structured response without contacting a provider."""
 
-    def __init__(self, response: str) -> None:
+    def __init__(self, response: object) -> None:
         self.response = response
         self.last_prompt = ""
         self.last_instructions: str | None = None
+        self.last_output_model: type[BaseModel] | None = None
 
-    def generate_text(
+    def generate_structured(
         self,
         prompt: str,
         *,
+        output_model: type[ModelT],
         instructions: str | None = None,
-    ) -> str:
+    ) -> ModelT:
+        """Record the request and return the configured response."""
         self.last_prompt = prompt
         self.last_instructions = instructions
-        return self.response
+        self.last_output_model = output_model
+        return cast(ModelT, self.response)
 
 
 def make_registry() -> ToolRegistry:
@@ -89,9 +95,9 @@ def make_plan(
     tool_name: str = "echo_text",
     input_data: dict[str, Any] | None = None,
     depends_on: list[str] | None = None,
-) -> str:
-    """Return a serialized single-task plan."""
-    return json.dumps(
+) -> WorkflowPlan:
+    """Return a validated single-task plan."""
+    return WorkflowPlan.model_validate(
         {
             "tasks": [
                 {
@@ -127,10 +133,11 @@ def test_planner_returns_a_validated_workflow() -> None:
 
     assert tool_names == ["echo_text"]
     assert llm.last_instructions is not None
+    assert llm.last_output_model is WorkflowPlan
 
 
 def test_planner_rejects_blank_goal() -> None:
-    planner = WorkflowPlanner(FakeLLM("{}"), make_registry())
+    planner = WorkflowPlanner(FakeLLM(make_plan()), make_registry())
 
     with pytest.raises(PlanningValidationError, match="goal cannot be blank"):
         planner.plan("   ", actor_role="operator")
@@ -143,24 +150,21 @@ def test_planner_rejects_invalid_actor_role() -> None:
         planner.plan("Process text", actor_role="unknown-role")
 
 
-def test_planner_rejects_invalid_json() -> None:
-    planner = WorkflowPlanner(FakeLLM("not JSON"), make_registry())
+def test_planner_rejects_unstructured_response() -> None:
+    planner = WorkflowPlanner(FakeLLM("not a structured plan"), make_registry())
 
-    with pytest.raises(PlanningOutputError, match="valid JSON"):
+    with pytest.raises(PlanningOutputError, match="structured workflow plan"):
         planner.plan("Process text", actor_role="operator")
 
 
-def test_planner_rejects_unexpected_plan_fields() -> None:
-    response = json.dumps(
-        {
-            "tasks": [],
-            "execute_immediately": True,
-        }
-    )
-    planner = WorkflowPlanner(FakeLLM(response), make_registry())
+def test_workflow_plan_rejects_unexpected_fields() -> None:
+    response = {
+        "tasks": [],
+        "execute_immediately": True,
+    }
 
-    with pytest.raises(PlanningOutputError, match="required schema"):
-        planner.plan("Process text", actor_role="operator")
+    with pytest.raises(ValidationError):
+        WorkflowPlan.model_validate(response)
 
 
 def test_planner_rejects_unknown_tool() -> None:

@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from agentops.services.execution import ExecutionService
-from agentops.services.tool_registry import ToolDefinition
+from agentops.services.tool_registry import ToolDefinition, ToolRegistry
 
 
 class SummarizeInput(BaseModel):
@@ -140,11 +140,7 @@ def find_matching_lines(data: dict[str, Any]) -> dict[str, Any]:
 
     normalized_query = query.strip().casefold()
 
-    matches = [
-        line
-        for line in text.splitlines()
-        if normalized_query in line.casefold()
-    ]
+    matches = [line for line in text.splitlines() if normalized_query in line.casefold()]
 
     return {
         "matches": matches,
@@ -152,11 +148,9 @@ def find_matching_lines(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def register_builtin_handlers(service: ExecutionService) -> None:
-    """Register built-in tools with their contracts and permissions."""
-
-    # Existing tool: viewers retain permission to use this tool.
-    service.register_tool(
+def _builtin_tool_definitions() -> tuple[ToolDefinition, ...]:
+    """Return the canonical definitions for all built-in tools."""
+    return (
         ToolDefinition(
             name="summarize_input",
             description="Normalize supplied text and count its characters.",
@@ -164,42 +158,42 @@ def register_builtin_handlers(service: ExecutionService) -> None:
             output_model=SummarizeOutput,
             handler=summarize_input,
             allowed_roles=frozenset({"admin", "operator", "viewer"}),
-        )
-    )
-
-    # Additional tools use the registry's default admin/operator permissions.
-    service.register_tool(
+        ),
         ToolDefinition(
             name="text_statistics",
-            description=(
-                "Calculate word, character, and line counts for text."
-            ),
+            description="Calculate word, character, and line counts for text.",
             input_model=TextStatisticsInput,
             output_model=TextStatisticsOutput,
             handler=text_statistics,
-        )
-    )
-
-    service.register_tool(
+        ),
         ToolDefinition(
             name="normalize_whitespace",
-            description=(
-                "Collapse consecutive whitespace into single spaces."
-            ),
+            description="Collapse consecutive whitespace into single spaces.",
             input_model=NormalizeWhitespaceInput,
             output_model=NormalizeWhitespaceOutput,
             handler=normalize_whitespace,
-        )
-    )
-
-    service.register_tool(
+        ),
         ToolDefinition(
             name="find_matching_lines",
-            description=(
-                "Find text lines containing a case-insensitive query."
-            ),
+            description="Find text lines containing a case-insensitive query.",
             input_model=FindMatchingLinesInput,
             output_model=FindMatchingLinesOutput,
             handler=find_matching_lines,
-        )
+        ),
     )
+
+
+def build_builtin_tool_registry() -> ToolRegistry:
+    """Build an independent registry containing all built-in tools."""
+    registry = ToolRegistry()
+
+    for definition in _builtin_tool_definitions():
+        registry.register(definition)
+
+    return registry
+
+
+def register_builtin_handlers(service: ExecutionService) -> None:
+    """Register the canonical built-in tools with the execution service."""
+    for definition in _builtin_tool_definitions():
+        service.register_tool(definition)

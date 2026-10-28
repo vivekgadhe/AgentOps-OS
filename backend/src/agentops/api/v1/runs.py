@@ -1,22 +1,44 @@
-"""API endpoints for creating, executing, and retrieving workflows."""
+"""API endpoints for creating, planning, executing, and retrieving workflows."""
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from agentops.api.deps import get_current_user, get_db
 from agentops.db.models import TaskDependency, User, WorkflowRun
+from agentops.schemas.planning import WorkflowPlanRequest
 from agentops.schemas.workflows import (
     TaskResponse,
     WorkflowCreate,
     WorkflowResponse,
 )
 from agentops.services.execution import ExecutionError, ExecutionService
-from agentops.services.handlers import register_builtin_handlers
+from agentops.services.handlers import (
+    build_builtin_tool_registry,
+    register_builtin_handlers,
+)
+from agentops.services.llm import (
+    LLMConfigurationError,
+    LLMProviderError,
+    LLMService,
+)
+from agentops.services.planner import (
+    PlanningOutputError,
+    PlanningValidationError,
+    WorkflowPlanner,
+)
 
 router = APIRouter(prefix="/runs", tags=["workflows"])
+
+
+def get_workflow_planner(request: Request) -> WorkflowPlanner:
+    """Construct a planner using application settings and approved built-in tools."""
+    llm = LLMService(request.app.state.settings)
+    registry = build_builtin_tool_registry()
+
+    return WorkflowPlanner(llm, registry)
 
 
 @router.post(
@@ -50,6 +72,7 @@ def create_workflow(
         .options(selectinload(WorkflowRun.tasks))
         .where(WorkflowRun.id == workflow.id)
     )
+
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -57,6 +80,37 @@ def create_workflow(
         )
 
     return _to_response(result, db)
+
+
+@router.post("/plan", response_model=WorkflowCreate)
+def plan_workflow(
+    payload: WorkflowPlanRequest,
+    planner: WorkflowPlanner = Depends(get_workflow_planner),
+    user: User = Depends(get_current_user),
+) -> WorkflowCreate:
+    """Generate a validated workflow plan without persisting or executing it."""
+    try:
+        return planner.plan(payload.goal, actor_role=user.role)
+    except LLMConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM service is not configured.",
+        ) from exc
+    except LLMProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The LLM provider request failed.",
+        ) from exc
+    except PlanningOutputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The LLM returned an invalid workflow plan.",
+        ) from exc
+    except PlanningValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The generated workflow plan failed validation.",
+        ) from exc
 
 
 @router.post("/{run_id}/execute", response_model=WorkflowResponse)
@@ -69,6 +123,7 @@ def execute_workflow(
     workflow = _get_owned_workflow(db, run_id, user.id)
     service = ExecutionService(db)
     register_builtin_handlers(service)
+
     try:
         service.execute_workflow(
             workflow.id,
@@ -109,12 +164,14 @@ def _get_owned_workflow(
             WorkflowRun.created_by == user_id,
         )
     )
+
     if workflow is None:
         # Do not disclose whether another user's workflow exists.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Workflow not found",
         )
+
     return workflow
 
 

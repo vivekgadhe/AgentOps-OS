@@ -21,6 +21,7 @@ class FakeRows:
         self.values = values
 
     def all(self) -> list[object]:
+        """Return the stored rows."""
         return self.values
 
 
@@ -117,7 +118,7 @@ def _make_execution_fixture() -> tuple[
     SimpleNamespace,
     list[SimpleNamespace],
 ]:
-    """Build a small in-memory workflow with reverse-ordered tasks."""
+    """Build an in-memory workflow with reverse-ordered tasks."""
     session = MagicMock()
 
     workflow_id = uuid4()
@@ -181,20 +182,25 @@ def _make_execution_fixture() -> tuple[
 def test_execution_uses_dependency_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tasks execute prerequisite-first even when created in reverse order."""
+    """Tasks execute prerequisite-first despite reverse creation order."""
     service, workflow, tasks = _make_execution_fixture()
     execution_order: list[str] = []
 
     def mark_succeeded(
         _workflow: object,
         task: SimpleNamespace,
+        *,
+        actor_role: str | None = None,
     ) -> None:
         execution_order.append(task.key)
         task.status = TaskStatus.SUCCEEDED.value
 
     monkeypatch.setattr(service, "_execute_task", mark_succeeded)
 
-    service.execute_workflow(workflow.id)
+    service.execute_workflow(
+        workflow.id,
+        actor_role="operator",
+    )
 
     assert execution_order == ["research", "write", "publish"]
     assert workflow.status == WorkflowStatus.SUCCEEDED.value
@@ -213,6 +219,8 @@ def test_execution_skips_dependents_after_failure(
     def fail_write(
         _workflow: object,
         task: SimpleNamespace,
+        *,
+        actor_role: str | None = None,
     ) -> None:
         execution_order.append(task.key)
 
@@ -224,7 +232,10 @@ def test_execution_skips_dependents_after_failure(
 
     monkeypatch.setattr(service, "_execute_task", fail_write)
 
-    service.execute_workflow(workflow.id)
+    service.execute_workflow(
+        workflow.id,
+        actor_role="operator",
+    )
 
     tasks_by_key = {task.key: task for task in tasks}
 

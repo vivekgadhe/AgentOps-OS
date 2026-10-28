@@ -11,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 
 ToolHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
+VALID_TOOL_ROLES = frozenset({"admin", "operator", "viewer"})
+
 
 class ToolRegistryError(ValueError):
     """Base error for tool registration and validation."""
@@ -28,6 +30,10 @@ class ToolOutputValidationError(ToolRegistryError):
     """Raised when tool output violates its declared schema."""
 
 
+class ToolAccessDeniedError(ToolRegistryError):
+    """Raised when a user's role cannot execute a tool."""
+
+
 @dataclass(frozen=True, slots=True)
 class ToolDefinition:
     """Describe a tool, its contracts, and its implementation."""
@@ -37,15 +43,19 @@ class ToolDefinition:
     input_model: type[BaseModel]
     output_model: type[BaseModel]
     handler: ToolHandler
+    allowed_roles: frozenset[str] = frozenset({"admin", "operator"})
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[a-z][a-z0-9_]{0,99}", self.name):
+        if not isinstance(self.name, str) or not re.fullmatch(
+            r"[a-z][a-z0-9_]{0,99}",
+            self.name,
+        ):
             raise ToolRegistryError(
                 "Tool names must start with a lowercase letter "
                 "and contain only lowercase letters, digits, and underscores."
             )
 
-        if not self.description.strip():
+        if not isinstance(self.description, str) or not self.description.strip():
             raise ToolRegistryError("Tool description cannot be blank.")
 
         if not isinstance(self.input_model, type) or not issubclass(
@@ -61,6 +71,31 @@ class ToolDefinition:
             raise ToolRegistryError(
                 "Tool output_model must be a Pydantic model."
             )
+
+        if not callable(self.handler):
+            raise ToolRegistryError("Tool handler must be callable.")
+
+        try:
+            roles = frozenset(self.allowed_roles)
+        except TypeError as exc:
+            raise ToolRegistryError(
+                "Tool roles must be an iterable of role names."
+            ) from exc
+
+        if not roles:
+            raise ToolRegistryError("A tool must allow at least one role.")
+
+        if not all(isinstance(role, str) for role in roles):
+            raise ToolRegistryError("Every allowed role must be a string.")
+
+        invalid_roles = roles - VALID_TOOL_ROLES
+
+        if invalid_roles:
+            raise ToolRegistryError(
+                f"Invalid tool roles: {', '.join(sorted(invalid_roles))}"
+            )
+
+        object.__setattr__(self, "allowed_roles", roles)
 
 
 class ToolRegistry:
@@ -127,3 +162,14 @@ class ToolRegistry:
             ) from exc
 
         return validated.model_dump()
+
+    def authorize(self, name: str, role: str) -> ToolDefinition:
+        """Return a tool only when the caller's role is permitted."""
+        tool = self.get(name)
+
+        if role not in tool.allowed_roles:
+            raise ToolAccessDeniedError(
+                f"Role '{role}' is not permitted to execute tool '{name}'."
+            )
+
+        return tool

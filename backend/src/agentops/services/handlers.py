@@ -41,7 +41,7 @@ def summarize_input(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def register_builtin_handlers(service: ExecutionService) -> None:
-    """Register built-in tools with explicit input and output contracts."""
+    """Register built-in tools with their contracts and permissions."""
     service.register_tool(
         ToolDefinition(
             name="summarize_input",
@@ -49,5 +49,6 @@ def register_builtin_handlers(service: ExecutionService) -> None:
             input_model=SummarizeInput,
             output_model=SummarizeOutput,
             handler=summarize_input,
+            allowed_roles=frozenset({"admin", "operator", "viewer"}),
         )
     )

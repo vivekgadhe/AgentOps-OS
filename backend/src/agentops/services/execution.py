@@ -25,6 +25,7 @@ from agentops.db.models import (
 )
 from agentops.services.task_runner import run_task
 from agentops.services.tool_registry import (
+    ToolAccessDeniedError,
     ToolDefinition,
     ToolNotFoundError,
     ToolRegistry,
@@ -269,14 +270,26 @@ class ExecutionService:
 
         return workflow
 
-    def execute_workflow(self, workflow_id: uuid.UUID) -> WorkflowRun:
+    def execute_workflow(
+        self,
+        workflow_id: uuid.UUID,
+        *,
+        actor_role: str | None = None,
+    ) -> WorkflowRun:
         """Execute tasks in dependency order and skip blocked tasks."""
         workflow = self.session.scalar(
             select(WorkflowRun).where(WorkflowRun.id == workflow_id).with_for_update()
         )
-
         if workflow is None:
             raise ExecutionError("Workflow not found")
+
+        # Resolve the creator's role for internal callers that do not pass
+        # the authenticated actor's role explicitly.
+        if actor_role is None:
+            creator = self.session.get(User, workflow.created_by)
+            if creator is None or not creator.is_active:
+                raise ExecutionError("Workflow creator is unavailable.")
+            actor_role = creator.role
 
         if workflow.status != WorkflowStatus.PENDING.value:
             raise ExecutionError(f"Workflow cannot start from status '{workflow.status}'")
@@ -289,13 +302,11 @@ class ExecutionService:
                 .with_for_update()
             ).all()
         )
-
         if not tasks:
             raise ExecutionError("Workflow has no tasks")
 
         tasks_by_id = {task.id: task for task in tasks}
         tasks_by_key = {task.key: task for task in tasks}
-
         dependencies_by_key: dict[str, list[str]] = {task.key: [] for task in tasks}
 
         dependency_edges = list(
@@ -307,10 +318,8 @@ class ExecutionService:
         for edge in dependency_edges:
             task = tasks_by_id.get(edge.task_id)
             prerequisite = tasks_by_id.get(edge.depends_on_task_id)
-
             if task is None or prerequisite is None:
                 raise ExecutionError("Workflow contains an invalid dependency reference")
-
             dependencies_by_key[task.key].append(prerequisite.key)
 
         try:
@@ -325,17 +334,14 @@ class ExecutionService:
 
         workflow.status = WorkflowStatus.RUNNING.value
         workflow.started_at = datetime.now(UTC)
-
         self._record_event(
             workflow.id,
             event_type="workflow.started",
             message="Workflow execution started",
         )
-
         self.session.commit()
 
         first_task_error: ExecutionError | None = None
-
         try:
             for task in tasks:
                 # A task can run only if every prerequisite succeeded.
@@ -356,7 +362,6 @@ class ExecutionService:
                         "dependencies": blocked_by,
                     }
                     task.finished_at = datetime.now(UTC)
-
                     self._record_event(
                         workflow.id,
                         task_run_id=task.id,
@@ -368,15 +373,18 @@ class ExecutionService:
                             "blocked_by": blocked_by,
                         },
                     )
-
                     self.session.flush()
                     continue
 
                 try:
-                    self._execute_task(workflow, task)
+                    self._execute_task(
+                        workflow,
+                        task,
+                        actor_role=actor_role,
+                    )
                 except ExecutionError as exc:
-                    # Keep processing independent tasks. Their descendants
-                    # will be skipped when their failed prerequisites are met.
+                    # Continue independent tasks; descendants of failed tasks
+                    # will be skipped when their prerequisites are checked.
                     if first_task_error is None:
                         first_task_error = exc
 
@@ -388,7 +396,6 @@ class ExecutionService:
 
             workflow.status = WorkflowStatus.SUCCEEDED.value
             workflow.finished_at = datetime.now(UTC)
-
             self._record_event(
                 workflow.id,
                 event_type="workflow.succeeded",
@@ -400,14 +407,12 @@ class ExecutionService:
                 "workflow_execution_failed",
                 extra={"workflow_id": str(workflow.id)},
             )
-
             workflow.status = WorkflowStatus.FAILED.value
             workflow.error = {
                 "type": type(exc).__name__,
                 "message": str(exc),
             }
             workflow.finished_at = datetime.now(UTC)
-
             self._record_event(
                 workflow.id,
                 event_type="workflow.failed",
@@ -418,14 +423,21 @@ class ExecutionService:
 
         self.session.commit()
         self.session.refresh(workflow)
-
         return workflow
 
-    def _execute_task(self, workflow: WorkflowRun, task: TaskRun) -> None:
+    def _execute_task(
+        self,
+        workflow: WorkflowRun,
+        task: TaskRun,
+        *,
+        actor_role: str | None = None,
+    ) -> None:
         """Run a task with bounded retries and persist its outcome."""
         tool_name = task.tool_name
-        tool_definition = None
+        tool_definition: ToolDefinition | None = None
 
+        # Resolve the tool before attempting authorization. This preserves the
+        # more useful HandlerNotFound failure for tasks without a registered tool.
         if tool_name:
             try:
                 tool_definition = self._tool_registry.get(tool_name)
@@ -439,7 +451,6 @@ class ExecutionService:
                 "message": f"No registered handler for task '{task.key}'",
             }
             task.finished_at = datetime.now(UTC)
-
             self._record_event(
                 workflow.id,
                 task_run_id=task.id,
@@ -452,8 +463,36 @@ class ExecutionService:
                 },
             )
             self.session.flush()
-
             raise ExecutionError(f"No handler registered for task '{task.key}'")
+
+        # Actor roles are optional only for internal/unit-test calls directly
+        # invoking this method. Workflow execution always resolves a real role.
+        # When no role is supplied here, skip authorization rather than passing
+        # None to the registry.
+        if actor_role is not None:
+            try:
+                self._tool_registry.authorize(tool_definition.name, actor_role)
+            except ToolAccessDeniedError as exc:
+                task.status = TaskStatus.FAILED.value
+                task.error = {
+                    "type": "ToolAccessDeniedError",
+                    "message": str(exc),
+                }
+                task.finished_at = datetime.now(UTC)
+                self._record_event(
+                    workflow.id,
+                    task_run_id=task.id,
+                    event_type="tool.access_denied",
+                    level=EventLevel.WARNING.value,
+                    message="Tool execution denied by role policy",
+                    data={
+                        "task_key": task.key,
+                        "tool_name": tool_definition.name,
+                        "actor_role": actor_role,
+                    },
+                )
+                self.session.flush()
+                raise ExecutionError(str(exc)) from exc
 
         task.started_at = datetime.now(UTC)
         task.finished_at = None
@@ -462,7 +501,6 @@ class ExecutionService:
         for attempt in range(1, task.max_attempts + 1):
             task.attempt_count += 1
             task.status = TaskStatus.RUNNING.value
-
             self._record_event(
                 workflow.id,
                 task_run_id=task.id,
@@ -470,7 +508,7 @@ class ExecutionService:
                 message=("Task execution started" if attempt == 1 else "Retrying failed task"),
                 data={
                     "task_key": task.key,
-                    "tool_name": tool_name,
+                    "tool_name": tool_definition.name,
                     "attempt": attempt,
                     "max_attempts": task.max_attempts,
                 },
@@ -478,22 +516,17 @@ class ExecutionService:
             self.session.flush()
 
             try:
-                assert tool_name is not None
-                assert tool_definition is not None
-
                 validated_input = self._tool_registry.validate_input(
-                    tool_name,
+                    tool_definition.name,
                     task.input_data or {},
                 )
-
                 result = run_task(
                     tool_definition.handler,
                     validated_input,
                     timeout_seconds=task.timeout_seconds,
                 )
-
                 result = self._tool_registry.validate_output(
-                    tool_name,
+                    tool_definition.name,
                     result,
                 )
 
@@ -504,7 +537,6 @@ class ExecutionService:
                 task.error = None
                 task.status = TaskStatus.SUCCEEDED.value
                 task.finished_at = datetime.now(UTC)
-
                 self._record_event(
                     workflow.id,
                     task_run_id=task.id,
@@ -526,7 +558,6 @@ class ExecutionService:
                     "message": str(exc),
                     "attempt": attempt,
                 }
-
                 self._record_event(
                     workflow.id,
                     task_run_id=task.id,
@@ -544,7 +575,6 @@ class ExecutionService:
 
         task.status = TaskStatus.FAILED.value
         task.finished_at = datetime.now(UTC)
-
         self._record_event(
             workflow.id,
             task_run_id=task.id,

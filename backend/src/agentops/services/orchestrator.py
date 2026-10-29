@@ -1,5 +1,5 @@
 """Orchestrate specialized agents using validated dependency graphs."""
-
+import logging
 from collections.abc import Sequence
 from typing import Any, Protocol
 from uuid import UUID
@@ -17,6 +17,7 @@ from agentops.services.agent_registry import (
     AgentRegistry,
 )
 
+logger = logging.getLogger(__name__)
 
 class AgentOrchestrationError(RuntimeError):
     """Raised when an orchestration cannot be safely prepared."""
@@ -147,14 +148,18 @@ class AgentOrchestrator:
                     context,
                 )
             except Exception as exc:
-                message = str(exc).strip() or "Agent execution failed."
+                logger.exception(
+                    "Agent task execution failed: task_key=%s, agent_name=%s",
+                    task.key,
+                    task.agent_name,
+                )
 
                 outcome = OrchestrationTaskResult(
                     key=task.key,
                     agent_name=task.agent_name,
                     status="failed",
                     error_type=type(exc).__name__,
-                    error_message=message[:1000],
+                    error_message="Agent execution failed.",
                 )
                 self._record_outcome(outcomes, outcome)
                 continue

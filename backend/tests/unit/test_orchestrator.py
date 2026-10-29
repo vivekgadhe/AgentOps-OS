@@ -344,3 +344,29 @@ def test_orchestrator_rejects_invalid_max_attempts() -> None:
                 registry,
                 max_attempts=invalid_value,
             )
+            
+def test_orchestrator_does_not_expose_internal_exception_message() -> None:
+    class ExplodingAgent(FakeAgent):
+        """Agent that raises an exception containing sensitive details."""
+
+        def run(self, context: AgentContext) -> AgentResult:
+            self.calls.append(context)
+            raise ValueError(
+                "Internal provider response containing sensitive details"
+            )
+
+    agent = ExplodingAgent("analysis_agent")
+    plan = make_plan([task("analysis", "analysis_agent")])
+
+    result = AgentOrchestrator(make_registry(agent)).run(
+        plan,
+        actor_role="operator",
+    )
+
+    outcome = result.tasks[0]
+
+    assert result.status == "failed"
+    assert outcome.status == "failed"
+    assert outcome.error_type == "ValueError"
+    assert outcome.error_message == "Agent execution failed."
+    assert "sensitive details" not in (outcome.error_message or "")

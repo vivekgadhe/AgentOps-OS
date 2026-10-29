@@ -5,6 +5,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agentops.schemas.payload_limits import (
+    MAX_AGENT_OUTPUT_BYTES,
+    MAX_CONTEXT_METADATA_BYTES,
+    MAX_CONTEXT_PRIOR_RESULTS_BYTES,
+    validate_json_payload_size,
+)
+
 AgentStatus = Literal["succeeded", "failed"]
 VALID_AGENT_ROLES = frozenset({"admin", "operator", "viewer"})
 
@@ -45,6 +52,32 @@ class AgentContext(BaseModel):
 
         return value
 
+    @field_validator("prior_results")
+    @classmethod
+    def validate_prior_results(
+        cls,
+        value: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Bound the size and complexity of accumulated agent results."""
+        return validate_json_payload_size(
+            value,
+            field_name="Agent prior_results",
+            max_bytes=MAX_CONTEXT_PRIOR_RESULTS_BYTES,
+        )
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(
+        cls,
+        value: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Bound the size and complexity of execution metadata."""
+        return validate_json_payload_size(
+            value,
+            field_name="Agent metadata",
+            max_bytes=MAX_CONTEXT_METADATA_BYTES,
+        )
+
 
 class AgentResult(BaseModel):
     """Standard result returned by a specialized agent."""
@@ -79,12 +112,21 @@ class AgentResult(BaseModel):
                 raise ValueError("Failed agent results require an error type.")
 
             if not self.error_message or not self.error_message.strip():
-                raise ValueError(
-                    "Failed agent results require an error message."
-                )
+                raise ValueError("Failed agent results require an error message.")
         elif self.error_type is not None or self.error_message is not None:
-            raise ValueError(
-                "Successful agent results cannot contain failure information."
-            )
+            raise ValueError("Successful agent results cannot contain failure information.")
 
         return self
+
+    @field_validator("output")
+    @classmethod
+    def validate_output(
+        cls,
+        value: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Bound agent output before it enters the orchestration workflow."""
+        return validate_json_payload_size(
+            value,
+            field_name="Agent output",
+            max_bytes=MAX_AGENT_OUTPUT_BYTES,
+        )

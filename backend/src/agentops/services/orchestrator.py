@@ -1,7 +1,8 @@
 """Orchestrate specialized agents using validated dependency graphs."""
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Protocol
+from uuid import UUID
 
 from agentops.schemas.agents import AgentContext, AgentResult
 from agentops.schemas.orchestration import (
@@ -21,11 +22,29 @@ class AgentOrchestrationError(RuntimeError):
     """Raised when an orchestration cannot be safely prepared."""
 
 
-class AgentOrchestrator:
-    """Coordinate registered agents without bypassing registry authorization."""
+class AgentStateWriter(Protocol):
+    """Interface for optional persistent agent-state storage."""
 
-    def __init__(self, registry: AgentRegistry) -> None:
+    workflow_id: UUID
+
+    def save_task_result(
+        self,
+        task_result: OrchestrationTaskResult,
+    ) -> None:
+        """Persist an agent-task outcome."""
+        ...
+
+
+class AgentOrchestrator:
+    """Coordinate registered agents and optionally persist task outcomes."""
+
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        state_store: AgentStateWriter | None = None,
+    ) -> None:
         self._registry = registry
+        self._state_store = state_store
 
     def run(
         self,
@@ -34,8 +53,7 @@ class AgentOrchestrator:
         actor_role: str,
     ) -> OrchestrationResult:
         """Execute an orchestration plan in dependency order."""
-        # Preflight all agents before starting work. An authorization failure
-        # must not occur after earlier tasks have already executed.
+        # Preflight all requested agents before starting any work.
         for task in plan.tasks:
             try:
                 self._registry.authorize(task.agent_name, actor_role)
@@ -45,7 +63,6 @@ class AgentOrchestrator:
                 ) from exc
 
         ordered_tasks = self._topological_order(plan.tasks)
-        tasks_by_key = {task.key: task for task in plan.tasks}
         dependencies_by_key = {task.key: task.depends_on for task in plan.tasks}
 
         outcomes: dict[str, OrchestrationTaskResult] = {}
@@ -59,7 +76,7 @@ class AgentOrchestrator:
             ]
 
             if blocked_by:
-                outcomes[task.key] = OrchestrationTaskResult(
+                outcome = OrchestrationTaskResult(
                     key=task.key,
                     agent_name=task.agent_name,
                     status="skipped",
@@ -69,12 +86,12 @@ class AgentOrchestrator:
                         + ", ".join(blocked_by)
                     ),
                 )
+                self._record_outcome(outcomes, outcome)
                 continue
 
             prior_results = self._collect_ancestor_results(
                 task.key,
                 dependencies_by_key,
-                tasks_by_key,
                 successful_results,
                 ordered_tasks,
             )
@@ -82,6 +99,9 @@ class AgentOrchestrator:
             context = AgentContext(
                 goal=task.goal or plan.goal,
                 actor_role=actor_role,
+                workflow_id=(
+                    self._state_store.workflow_id if self._state_store is not None else None
+                ),
                 prior_results=prior_results,
                 metadata={
                     "task_key": task.key,
@@ -91,22 +111,24 @@ class AgentOrchestrator:
             )
 
             try:
-                agent_result = self._registry.execute(task.agent_name, context)
+                agent_result = self._registry.execute(
+                    task.agent_name,
+                    context,
+                )
             except Exception as exc:
-                # Record the task failure and allow independent branches to
-                # proceed. Dependents are skipped by the dependency check.
                 message = str(exc).strip() or "Agent execution failed."
 
-                outcomes[task.key] = OrchestrationTaskResult(
+                outcome = OrchestrationTaskResult(
                     key=task.key,
                     agent_name=task.agent_name,
                     status="failed",
                     error_type=type(exc).__name__,
                     error_message=message[:1000],
                 )
+                self._record_outcome(outcomes, outcome)
                 continue
 
-            outcomes[task.key] = OrchestrationTaskResult(
+            outcome = OrchestrationTaskResult(
                 key=task.key,
                 agent_name=task.agent_name,
                 status=agent_result.status,
@@ -114,6 +136,7 @@ class AgentOrchestrator:
                 error_type=agent_result.error_type,
                 error_message=agent_result.error_message,
             )
+            self._record_outcome(outcomes, outcome)
 
             if agent_result.status == "succeeded":
                 successful_results[task.key] = agent_result
@@ -126,6 +149,22 @@ class AgentOrchestrator:
             status="succeeded" if workflow_succeeded else "failed",
             tasks=task_results,
         )
+
+    def _record_outcome(
+        self,
+        outcomes: dict[str, OrchestrationTaskResult],
+        outcome: OrchestrationTaskResult,
+    ) -> None:
+        """Record an outcome in memory and, when configured, in persistent state."""
+        if self._state_store is not None:
+            try:
+                self._state_store.save_task_result(outcome)
+            except Exception as exc:
+                raise AgentOrchestrationError(
+                    f"Failed to persist the outcome for task '{outcome.key}'."
+                ) from exc
+
+        outcomes[outcome.key] = outcome
 
     @staticmethod
     def _topological_order(
@@ -164,7 +203,6 @@ class AgentOrchestrator:
     def _collect_ancestor_results(
         task_key: str,
         dependencies_by_key: dict[str, list[str]],
-        tasks_by_key: dict[str, OrchestrationTask],
         successful_results: dict[str, AgentResult],
         ordered_tasks: Sequence[OrchestrationTask],
     ) -> dict[str, dict[str, Any]]:

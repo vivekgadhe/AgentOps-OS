@@ -71,6 +71,7 @@ class FakeAgent:
             output=self.output,
         )
 
+
 class RetryableFakeAgent(FakeAgent):
     """Fake agent that raises explicitly retryable failures."""
 
@@ -88,9 +89,7 @@ class RetryableFakeAgent(FakeAgent):
 
         if self.failures_remaining > 0:
             self.failures_remaining -= 1
-            raise RetryableAgentExecutionError(
-                "Temporary test failure."
-            )
+            raise RetryableAgentExecutionError("Temporary test failure.")
 
         return AgentResult(
             agent_name=self.definition.name,
@@ -98,8 +97,8 @@ class RetryableFakeAgent(FakeAgent):
             summary=f"{self.definition.name} completed.",
             output=self.output,
         )
-        
-        
+
+
 def make_registry(*agents: FakeAgent) -> AgentRegistry:
     """Create a registry and register the given fake agents."""
     registry = AgentRegistry(build_builtin_tool_registry())
@@ -296,6 +295,7 @@ def test_orchestration_result_can_be_serialized() -> None:
     assert serialized["status"] == "succeeded"
     assert serialized["tasks"][0]["agent_name"] == "analysis_agent"
 
+
 def test_orchestrator_retries_explicitly_retryable_failures() -> None:
     agent = RetryableFakeAgent(
         "analysis_agent",
@@ -344,16 +344,15 @@ def test_orchestrator_rejects_invalid_max_attempts() -> None:
                 registry,
                 max_attempts=invalid_value,
             )
-            
+
+
 def test_orchestrator_does_not_expose_internal_exception_message() -> None:
     class ExplodingAgent(FakeAgent):
         """Agent that raises an exception containing sensitive details."""
 
         def run(self, context: AgentContext) -> AgentResult:
             self.calls.append(context)
-            raise ValueError(
-                "Internal provider response containing sensitive details"
-            )
+            raise ValueError("Internal provider response containing sensitive details")
 
     agent = ExplodingAgent("analysis_agent")
     plan = make_plan([task("analysis", "analysis_agent")])
@@ -370,3 +369,88 @@ def test_orchestrator_does_not_expose_internal_exception_message() -> None:
     assert outcome.error_type == "ValueError"
     assert outcome.error_message == "Agent execution failed."
     assert "sensitive details" not in (outcome.error_message or "")
+
+
+def test_orchestrator_enforces_total_attempt_budget() -> None:
+    first = FakeAgent("analysis_agent")
+    second = FakeAgent("report_agent")
+    third = FakeAgent("writer_agent")
+
+    registry = make_registry(first, second, third)
+    plan = make_plan(
+        [
+            task("first", "analysis_agent"),
+            task("second", "report_agent"),
+            task("third", "writer_agent"),
+        ]
+    )
+
+    result = AgentOrchestrator(
+        registry,
+        max_total_attempts=2,
+    ).run(plan, actor_role="operator")
+
+    outcomes = {item.key: item for item in result.tasks}
+
+    assert outcomes["first"].status == "succeeded"
+    assert outcomes["second"].status == "succeeded"
+    assert outcomes["third"].status == "skipped"
+    assert outcomes["third"].error_type == "AgentExecutionBudgetExceeded"
+    assert len(first.calls) == 1
+    assert len(second.calls) == 1
+    assert third.calls == []
+
+
+def test_orchestrator_enforces_cumulative_context_budget() -> None:
+    sample_context = AgentContext(
+        goal="Analyze customer feedback",
+        actor_role="operator",
+        prior_results={},
+        metadata={
+            "task_key": "alpha",
+            "agent_name": "analysis_agent",
+            "depends_on": [],
+        },
+    )
+    context_limit = len(sample_context.model_dump_json().encode("utf-8"))
+
+    first = FakeAgent("analysis_agent")
+    second = FakeAgent("report_agent")
+
+    result = AgentOrchestrator(
+        make_registry(first, second),
+        max_total_context_bytes=context_limit,
+    ).run(
+        make_plan(
+            [
+                task("alpha", "analysis_agent"),
+                task("bravo", "report_agent"),
+            ]
+        ),
+        actor_role="operator",
+    )
+
+    outcomes = {item.key: item for item in result.tasks}
+
+    assert outcomes["alpha"].status == "succeeded"
+    assert outcomes["bravo"].status == "failed"
+    assert outcomes["bravo"].error_type == "AgentContextBudgetExceeded"
+    assert outcomes["bravo"].error_message == ("Orchestration context budget was exceeded.")
+    assert len(first.calls) == 1
+    assert second.calls == []
+
+
+def test_orchestrator_rejects_invalid_run_budgets() -> None:
+    registry = make_registry(FakeAgent("analysis_agent"))
+
+    with pytest.raises(ValueError, match="max_total_attempts"):
+        AgentOrchestrator(registry, max_total_attempts=0)
+
+    with pytest.raises(ValueError, match="max_total_attempts"):
+        AgentOrchestrator(registry, max_total_attempts=True)
+
+    with pytest.raises(ValueError, match="max_total_context_bytes"):
+        AgentOrchestrator(registry, max_total_context_bytes=0)
+
+    with pytest.raises(ValueError, match="max_total_context_bytes"):
+        AgentOrchestrator(registry, max_total_context_bytes=True)

@@ -18,6 +18,7 @@ from agentops.services.handlers import build_builtin_tool_registry
 from agentops.services.orchestrator import (
     AgentOrchestrationError,
     AgentOrchestrator,
+    RetryableAgentExecutionError,
 )
 
 
@@ -70,7 +71,35 @@ class FakeAgent:
             output=self.output,
         )
 
+class RetryableFakeAgent(FakeAgent):
+    """Fake agent that raises explicitly retryable failures."""
 
+    def __init__(
+        self,
+        name: str,
+        *,
+        failures_before_success: int,
+    ) -> None:
+        super().__init__(name)
+        self.failures_remaining = failures_before_success
+
+    def run(self, context: AgentContext) -> AgentResult:
+        self.calls.append(context)
+
+        if self.failures_remaining > 0:
+            self.failures_remaining -= 1
+            raise RetryableAgentExecutionError(
+                "Temporary test failure."
+            )
+
+        return AgentResult(
+            agent_name=self.definition.name,
+            status="succeeded",
+            summary=f"{self.definition.name} completed.",
+            output=self.output,
+        )
+        
+        
 def make_registry(*agents: FakeAgent) -> AgentRegistry:
     """Create a registry and register the given fake agents."""
     registry = AgentRegistry(build_builtin_tool_registry())
@@ -266,3 +295,52 @@ def test_orchestration_result_can_be_serialized() -> None:
 
     assert serialized["status"] == "succeeded"
     assert serialized["tasks"][0]["agent_name"] == "analysis_agent"
+
+def test_orchestrator_retries_explicitly_retryable_failures() -> None:
+    agent = RetryableFakeAgent(
+        "analysis_agent",
+        failures_before_success=1,
+    )
+
+    result = AgentOrchestrator(
+        make_registry(agent),
+        max_attempts=2,
+    ).run(
+        make_plan([task("analysis", "analysis_agent")]),
+        actor_role="operator",
+    )
+
+    assert result.status == "succeeded"
+    assert result.tasks[0].status == "succeeded"
+    assert len(agent.calls) == 2
+
+
+def test_orchestrator_stops_after_maximum_attempts() -> None:
+    agent = RetryableFakeAgent(
+        "analysis_agent",
+        failures_before_success=3,
+    )
+
+    result = AgentOrchestrator(
+        make_registry(agent),
+        max_attempts=2,
+    ).run(
+        make_plan([task("analysis", "analysis_agent")]),
+        actor_role="operator",
+    )
+
+    assert result.status == "failed"
+    assert result.tasks[0].status == "failed"
+    assert result.tasks[0].error_type == "RetryableAgentExecutionError"
+    assert len(agent.calls) == 2
+
+
+def test_orchestrator_rejects_invalid_max_attempts() -> None:
+    registry = make_registry(FakeAgent("analysis_agent"))
+
+    for invalid_value in (0, 4, -1, True):
+        with pytest.raises(ValueError, match="max_attempts"):
+            AgentOrchestrator(
+                registry,
+                max_attempts=invalid_value,
+            )

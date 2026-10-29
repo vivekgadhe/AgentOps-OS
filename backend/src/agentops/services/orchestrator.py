@@ -22,6 +22,10 @@ class AgentOrchestrationError(RuntimeError):
     """Raised when an orchestration cannot be safely prepared."""
 
 
+class RetryableAgentExecutionError(RuntimeError):
+    """An explicitly retryable agent execution failure."""
+
+
 class AgentStateWriter(Protocol):
     """Interface for optional persistent agent-state storage."""
 
@@ -42,10 +46,37 @@ class AgentOrchestrator:
         self,
         registry: AgentRegistry,
         state_store: AgentStateWriter | None = None,
+        *,
+        max_attempts: int = 1,
     ) -> None:
+        """Initialize orchestration with a bounded retry policy."""
+        if (
+            isinstance(max_attempts, bool)
+            or not isinstance(max_attempts, int)
+            or not 1 <= max_attempts <= 3
+        ):
+            raise ValueError("max_attempts must be between 1 and 3.")
+
         self._registry = registry
         self._state_store = state_store
+        self._max_attempts = max_attempts
 
+    def _execute_with_retries(
+        self,
+        agent_name: str,
+        context: AgentContext,
+    ) -> AgentResult:
+        """Retry only failures explicitly marked as retryable."""
+        for attempt in range(self._max_attempts):
+            try:
+                return self._registry.execute(agent_name, context)
+            except RetryableAgentExecutionError:
+                if attempt + 1 == self._max_attempts:
+                    raise
+
+        raise AgentOrchestrationError(
+            "Agent execution attempts were exhausted."
+        )
     def run(
         self,
         plan: OrchestrationPlan,
@@ -111,7 +142,7 @@ class AgentOrchestrator:
             )
 
             try:
-                agent_result = self._registry.execute(
+                agent_result = self._execute_with_retries(
                     task.agent_name,
                     context,
                 )

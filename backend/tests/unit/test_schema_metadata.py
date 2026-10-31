@@ -28,7 +28,10 @@ EXPECTED_TABLES = {
     "task_dependencies",
     "execution_events",
     "audit_logs",
+    "knowledge_documents",
+    "knowledge_chunks",
 }
+
 POSTGRES_MAX_IDENTIFIER = 63
 
 
@@ -38,13 +41,16 @@ def test_all_expected_tables_are_registered() -> None:
 
 def test_every_constraint_and_index_is_named_and_fits_postgres() -> None:
     problems: list[str] = []
+
     for table in Base.metadata.tables.values():
         names = [c.name for c in table.constraints] + [i.name for i in table.indexes]
+
         for name in names:
             if not name:
                 problems.append(f"{table.name}: unnamed constraint or index")
             elif len(str(name)) > POSTGRES_MAX_IDENTIFIER:
                 problems.append(f"{table.name}: {name!r} longer than 63 characters")
+
     assert problems == []
 
 
@@ -57,13 +63,17 @@ def test_every_constraint_and_index_is_named_and_fits_postgres() -> None:
         (CheckConstraint, "ck_"),
     ],
 )
-def test_constraint_names_follow_the_prefix_convention(constraint_type: type, prefix: str) -> None:
+def test_constraint_names_follow_the_prefix_convention(
+    constraint_type: type,
+    prefix: str,
+) -> None:
     wrong = [
         f"{table.name}.{constraint.name}"
         for table in Base.metadata.tables.values()
         for constraint in table.constraints
         if isinstance(constraint, constraint_type) and not str(constraint.name).startswith(prefix)
     ]
+
     assert wrong == []
 
 
@@ -74,6 +84,7 @@ def test_every_foreign_key_declares_its_delete_behaviour() -> None:
         for fk in table.foreign_key_constraints
         if fk.ondelete not in {"CASCADE", "RESTRICT"}
     ]
+
     assert missing == []
 
 
@@ -85,13 +96,18 @@ def test_every_datetime_column_is_timezone_aware() -> None:
         if column.type.__class__.__name__ == "DateTime"
         and not getattr(column.type, "timezone", False)
     ]
+
     assert naive == []
 
 
 @pytest.mark.parametrize(
-    "enum_class", [UserRole, WorkflowStatus, TaskStatus, EventLevel, AuditOutcome]
+    "enum_class",
+    [UserRole, WorkflowStatus, TaskStatus, EventLevel, AuditOutcome],
 )
-def test_enum_values_are_lowercase_and_unique(enum_class: type[StrEnum]) -> None:
+def test_enum_values_are_lowercase_and_unique(
+    enum_class: type[StrEnum],
+) -> None:
     values = [member.value for member in enum_class]
+
     assert values == [v.lower() for v in values]
     assert len(values) == len(set(values))

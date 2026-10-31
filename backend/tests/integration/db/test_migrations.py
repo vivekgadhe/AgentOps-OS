@@ -27,9 +27,12 @@ EXPECTED_TABLES = {
     "task_dependencies",
     "execution_events",
     "audit_logs",
+    "knowledge_documents",
+    "knowledge_chunks",
 }
+
 EXPECTED_AUDIT_TRIGGERS = {"audit_logs_no_update_delete", "audit_logs_no_truncate"}
-HEAD_REVISION = "0001"
+HEAD_REVISION = "0002"
 
 
 def _ignore_version_table(
@@ -125,7 +128,7 @@ def test_audit_triggers_are_installed(
 def test_no_drift_between_models_and_migrations(
     scratch_engine: Engine, make_alembic_config: AlembicConfigFactory
 ) -> None:
-    """If this fails, the ORM models and migration 0001 disagree.
+    """If this fails, the ORM models and migration chain disagree.
 
     The assertion message lists exactly what differs: fix the model, or add a
     new migration. (Server-default comparison is the most likely source of a

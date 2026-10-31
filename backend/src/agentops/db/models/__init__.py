@@ -8,6 +8,7 @@ from agentops.db.models.enums import (
     UserRole,
     WorkflowStatus,
 )
+from agentops.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from agentops.db.models.user import User
 from agentops.db.models.workflow import (
     ExecutionEvent,
@@ -28,4 +29,6 @@ __all__ = [
     "UserRole",
     "WorkflowRun",
     "WorkflowStatus",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
 ]

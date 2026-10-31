@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,28 +33,56 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = SecretStr(INSECURE_DEV_JWT_SECRET)
     access_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
 
-    # LLM integration.
-    # The API key is optional so the application and unit tests can run
-    # without making external API requests.
+    # Existing hosted LLM integration remains available to non-RAG workflows.
     openai_api_key: SecretStr | None = None
     openai_model: str = Field(default="gpt-5.5", min_length=1, max_length=100)
     llm_timeout_s: int = Field(default=30, ge=1, le=300)
+
+    # Phase 7 local Ollama services. No hosted API key is required for RAG.
+    ollama_base_url: str = Field(
+        default="http://localhost:11434", min_length=1, max_length=500
+    )
+    ollama_chat_model: str = Field(
+        default="qwen3.5:0.8b", min_length=1, max_length=100
+    )
+    ollama_embedding_model: str = Field(
+        default="embeddinggemma", min_length=1, max_length=100
+    )
+    ollama_timeout_s: int = Field(default=180, ge=1, le=900)
+
+    knowledge_max_upload_bytes: int = Field(
+        default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024
+    )
+    knowledge_max_pdf_pages: int = Field(default=200, ge=1, le=1000)
+    knowledge_chunk_size_chars: int = Field(default=1200, ge=200, le=5000)
+    knowledge_chunk_overlap_chars: int = Field(default=200, ge=0, le=1000)
+    knowledge_max_chunks_per_document: int = Field(default=5000, ge=1, le=20000)
 
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalize_log_level(cls, value: Any) -> Any:
         return value.upper() if isinstance(value, str) else value
 
-    @field_validator("openai_model", mode="before")
+    @field_validator("openai_model", "ollama_chat_model", "ollama_embedding_model", mode="before")
     @classmethod
-    def _normalize_openai_model(cls, value: Any) -> Any:
+    def _normalize_model_name(cls, value: Any) -> Any:
         if isinstance(value, str):
             normalized = value.strip()
             if not normalized:
-                raise ValueError("OPENAI_MODEL cannot be blank.")
+                raise ValueError("Model names cannot be blank.")
             return normalized
-
         return value
+
+    @field_validator("ollama_base_url", mode="before")
+    @classmethod
+    def _normalize_ollama_url(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().rstrip("/")
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("OLLAMA_BASE_URL must be an absolute HTTP(S) URL.")
+        return normalized
 
     @field_validator("database_url")
     @classmethod
@@ -64,7 +93,12 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _require_real_secret_outside_dev(self) -> "Settings":
+    def _validate_settings(self) -> "Settings":
+        if self.knowledge_chunk_overlap_chars >= self.knowledge_chunk_size_chars:
+            raise ValueError(
+                "KNOWLEDGE_CHUNK_OVERLAP_CHARS must be smaller than "
+                "KNOWLEDGE_CHUNK_SIZE_CHARS."
+            )
         if self.app_env != "dev":
             secret = self.jwt_secret.get_secret_value()
             if secret == INSECURE_DEV_JWT_SECRET or len(secret) < MIN_SECRET_LENGTH:

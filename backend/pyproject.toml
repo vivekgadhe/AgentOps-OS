@@ -20,6 +20,9 @@ dependencies = [
     "pyjwt>=2.15.1",
     "email-validator>=2.3.0",
     "openai>=3.39.0,<4.0.0",
+    "pgvector>=0.3.6",
+    "pypdf>=5.0",
+    "python-multipart>=0.0.32",
 ]
 
 [project.optional-dependencies]

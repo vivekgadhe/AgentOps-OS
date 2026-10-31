@@ -3,7 +3,7 @@ name: agentops
 
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-agentops}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentops}

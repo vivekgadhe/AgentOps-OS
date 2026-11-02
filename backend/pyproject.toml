@@ -23,6 +23,7 @@ dependencies = [
     "pgvector>=0.3.6",
     "pypdf>=5.0",
     "python-multipart>=0.0.32",
+    "cryptography>=50.0.2",
 ]
 
 [project.optional-dependencies]

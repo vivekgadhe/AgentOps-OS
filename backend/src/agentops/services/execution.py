@@ -23,6 +23,8 @@ from agentops.db.models import (
     WorkflowRun,
     WorkflowStatus,
 )
+from agentops.db.models.approval import ApprovalRequest
+from agentops.services.approval_service import ApprovalService
 from agentops.services.task_runner import run_task
 from agentops.services.tool_registry import (
     ToolAccessDeniedError,
@@ -95,10 +97,17 @@ class ExecutionError(Exception):
 class ExecutionService:
     """Create workflows and execute tasks through registered handlers."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        approval_ttl_hours: int = 24,
+        tool_registry: ToolRegistry | None = None,
+    ) -> None:
         self.session = session
+        self._approval_service = ApprovalService(session, ttl_hours=approval_ttl_hours)
         self._handlers: dict[str, TaskHandler] = {}
-        self._tool_registry = ToolRegistry()
+        self._tool_registry = tool_registry or ToolRegistry()
 
     def register_tool(self, definition: ToolDefinition) -> None:
         """Register a tool with explicit input and output contracts."""
@@ -291,7 +300,10 @@ class ExecutionService:
                 raise ExecutionError("Workflow creator is unavailable.")
             actor_role = creator.role
 
-        if workflow.status != WorkflowStatus.PENDING.value:
+        if workflow.status not in {
+            WorkflowStatus.PENDING.value,
+            WorkflowStatus.AWAITING_APPROVAL.value,
+        }:
             raise ExecutionError(f"Workflow cannot start from status '{workflow.status}'")
 
         tasks = list(
@@ -332,18 +344,25 @@ class ExecutionService:
 
         tasks = [tasks_by_key[key] for key in ordered_keys]
 
+        was_resuming = workflow.status == WorkflowStatus.AWAITING_APPROVAL.value
         workflow.status = WorkflowStatus.RUNNING.value
-        workflow.started_at = datetime.now(UTC)
+        if workflow.started_at is None:
+            workflow.started_at = datetime.now(UTC)
         self._record_event(
             workflow.id,
-            event_type="workflow.started",
-            message="Workflow execution started",
+            event_type="workflow.resumed" if was_resuming else "workflow.started",
+            message="Workflow execution resumed" if was_resuming else "Workflow execution started",
         )
         self.session.commit()
 
         first_task_error: ExecutionError | None = None
         try:
             for task in tasks:
+                # Resuming an approval-paused workflow must not repeat tasks
+                # that completed before the pause.
+                if task.status == TaskStatus.SUCCEEDED.value:
+                    continue
+
                 # A task can run only if every prerequisite succeeded.
                 blocked_by = [
                     dependency_key
@@ -376,12 +395,74 @@ class ExecutionService:
                     self.session.flush()
                     continue
 
+                # Approval requirements come only from the trusted registered
+                # tool definition. Task input and LLM output cannot disable them.
+                tool_definition = None
+                if task.tool_name:
+                    try:
+                        tool_definition = self._tool_registry.get(task.tool_name)
+                    except ToolNotFoundError:
+                        tool_definition = None
+
+                if (
+                    tool_definition is not None
+                    and tool_definition.requires_approval
+                    and actor_role in tool_definition.allowed_roles
+                ):
+                    approval = self.session.scalar(
+                        select(ApprovalRequest)
+                        .where(ApprovalRequest.task_run_id == task.id)
+                        .with_for_update()
+                    )
+                    now = datetime.now(UTC)
+                    if (
+                        approval is not None
+                        and approval.status == "pending"
+                        and approval.expires_at <= now
+                    ):
+                        self._approval_service.expire_pending(approval)
+                        self.session.commit()
+                        self.session.refresh(workflow)
+                        return workflow
+
+                    if approval is None:
+                        self._approval_service.create_for_task(
+                            workflow,
+                            task,
+                            tool_name=tool_definition.name,
+                            action_summary=f"{task.name} ({tool_definition.name})",
+                        )
+                        approval = self.session.scalar(
+                            select(ApprovalRequest).where(ApprovalRequest.task_run_id == task.id)
+                        )
+
+                    if approval is None or approval.status != "approved":
+                        task.status = TaskStatus.AWAITING_APPROVAL.value
+                        task.finished_at = None
+                        workflow.status = WorkflowStatus.AWAITING_APPROVAL.value
+                        workflow.finished_at = None
+                        self._record_event(
+                            workflow.id,
+                            task_run_id=task.id,
+                            event_type="task.awaiting_approval",
+                            message="Task paused until a human approval decision is recorded.",
+                            data={
+                                "task_key": task.key,
+                                "tool_name": tool_definition.name,
+                                "approval_request_id": str(approval.id) if approval else None,
+                            },
+                        )
+                        self.session.commit()
+                        self.session.refresh(workflow)
+                        return workflow
+
                 try:
                     self._execute_task(
                         workflow,
                         task,
                         actor_role=actor_role,
                     )
+                    self._approval_service.mark_executed(task.id)
                 except ExecutionError as exc:
                     # Continue independent tasks; descendants of failed tasks
                     # will be skipped when their prerequisites are checked.

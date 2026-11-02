@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -53,7 +54,10 @@ def planning_app() -> FastAPI:
     )
     app = create_app(settings)
 
-    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(role="operator")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=uuid4(),
+        role="operator",
+    )
 
     return app
 
@@ -101,9 +105,14 @@ def test_plan_endpoint_returns_validated_plan(
 
 
 def test_plan_endpoint_rejects_blank_goal(
+    planning_app: FastAPI,
     planning_client: TestClient,
 ) -> None:
     """Reject a blank goal at request validation."""
+    planning_app.dependency_overrides[get_workflow_planner] = lambda: StubPlanner(
+        error=AssertionError("Planner must not run for invalid input.")
+    )
+
     response = planning_client.post(
         "/api/v1/runs/plan",
         json={"goal": "   "},

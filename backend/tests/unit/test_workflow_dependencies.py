@@ -133,22 +133,30 @@ def _make_execution_fixture() -> tuple[
     research = SimpleNamespace(
         id=uuid4(),
         key="research",
+        name="Research",
+        tool_name=None,
         status=TaskStatus.PENDING.value,
         error=None,
         started_at=None,
         finished_at=None,
     )
+
     write = SimpleNamespace(
         id=uuid4(),
         key="write",
+        name="Write",
+        tool_name=None,
         status=TaskStatus.PENDING.value,
         error=None,
         started_at=None,
         finished_at=None,
     )
+
     publish = SimpleNamespace(
         id=uuid4(),
         key="publish",
+        name="Publish",
+        tool_name=None,
         status=TaskStatus.PENDING.value,
         error=None,
         started_at=None,
@@ -186,6 +194,13 @@ def test_execution_uses_dependency_order(
     service, workflow, tasks = _make_execution_fixture()
     execution_order: list[str] = []
 
+    # Approval persistence is outside the scope of this dependency-order test.
+    monkeypatch.setattr(
+        service._approval_service,
+        "mark_executed",
+        lambda _task_id: None,
+    )
+
     def mark_succeeded(
         _workflow: object,
         task: SimpleNamespace,
@@ -204,9 +219,7 @@ def test_execution_uses_dependency_order(
 
     assert execution_order == ["research", "write", "publish"]
     assert workflow.status == WorkflowStatus.SUCCEEDED.value
-    assert all(
-        task.status == TaskStatus.SUCCEEDED.value for task in tasks
-    )
+    assert all(task.status == TaskStatus.SUCCEEDED.value for task in tasks)
 
 
 def test_execution_skips_dependents_after_failure(
@@ -215,6 +228,13 @@ def test_execution_skips_dependents_after_failure(
     """Dependent tasks are skipped after a prerequisite fails."""
     service, workflow, tasks = _make_execution_fixture()
     execution_order: list[str] = []
+
+    # Approval persistence is outside the scope of this dependency test.
+    monkeypatch.setattr(
+        service._approval_service,
+        "mark_executed",
+        lambda _task_id: None,
+    )
 
     def fail_write(
         _workflow: object,

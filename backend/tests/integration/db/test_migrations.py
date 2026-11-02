@@ -29,10 +29,12 @@ EXPECTED_TABLES = {
     "audit_logs",
     "knowledge_documents",
     "knowledge_chunks",
+    "ai_provider_configs",
+    "approval_requests",
 }
 
 EXPECTED_AUDIT_TRIGGERS = {"audit_logs_no_update_delete", "audit_logs_no_truncate"}
-HEAD_REVISION = "0002"
+HEAD_REVISION = "0003"
 
 
 def _ignore_version_table(

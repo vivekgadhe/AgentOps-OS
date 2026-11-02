@@ -21,13 +21,13 @@ from agentops.schemas.knowledge import (
 from agentops.services.agent_registry import AgentAccessDeniedError, AgentRegistry
 from agentops.services.document_processing import DocumentProcessingError
 from agentops.services.embeddings import EmbeddingServiceError, OllamaEmbeddingClient
-from agentops.services.handlers import build_builtin_tool_registry
+from agentops.services.handlers import build_application_tool_registry
 from agentops.services.knowledge_base import (
     DuplicateDocumentError,
     KnowledgeBaseService,
     RetrievedChunk,
 )
-from agentops.services.ollama_generation import OllamaStructuredGenerator
+from agentops.services.providers.provider_manager import build_provider_manager
 from agentops.services.rag import NoRelevantKnowledgeError, RAGGenerationError, RAGService
 from agentops.services.specialized_agents import AnalysisAgent, ReportAgent
 
@@ -213,14 +213,12 @@ def _run_rag(
                 model=settings.ollama_embedding_model,
                 timeout_s=settings.ollama_timeout_s,
             ) as embeddings,
-            OllamaStructuredGenerator(
-                base_url=settings.ollama_base_url,
-                model=settings.ollama_chat_model,
-                timeout_s=settings.ollama_timeout_s,
-            ) as generator,
+            build_provider_manager(db, user.id, settings) as generator,
         ):
             knowledge_base = _knowledge_service(db, settings, embeddings)
-            registry = AgentRegistry(build_builtin_tool_registry())
+            registry = AgentRegistry(
+                build_application_tool_registry(request.app.state.tool_registrars)
+            )
             if agent_name == "analysis_agent":
                 registry.register(AnalysisAgent(generator))
             elif agent_name == "report_agent":
@@ -243,7 +241,7 @@ def _run_rag(
         raise HTTPException(
             status_code=503, detail="Local embedding service is unavailable."
         ) from exc
-    except RAGGenerationError as exc:
+    except (RAGGenerationError, ValueError) as exc:
         raise HTTPException(status_code=502, detail="Local agent generation failed.") from exc
     except AgentAccessDeniedError as exc:
         raise HTTPException(status_code=403, detail="Agent access denied.") from exc

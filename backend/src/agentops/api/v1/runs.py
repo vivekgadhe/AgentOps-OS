@@ -1,5 +1,6 @@
 """API endpoints for creating, planning, executing, and retrieving workflows."""
 
+from collections.abc import Iterator
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -14,31 +15,41 @@ from agentops.schemas.workflows import (
     WorkflowCreate,
     WorkflowResponse,
 )
-from agentops.services.execution import ExecutionError, ExecutionService
-from agentops.services.handlers import (
-    build_builtin_tool_registry,
-    register_builtin_handlers,
-)
-from agentops.services.llm import (
-    LLMConfigurationError,
-    LLMProviderError,
-    LLMService,
-)
+from agentops.services.execution import ExecutionError
+from agentops.services.execution_factory import build_execution_service
+from agentops.services.handlers import build_application_tool_registry
+from agentops.services.llm import LLMConfigurationError, LLMProviderError
 from agentops.services.planner import (
     PlanningOutputError,
     PlanningValidationError,
     WorkflowPlanner,
 )
+from agentops.services.providers.base import ProviderError
+from agentops.services.providers.provider_manager import build_provider_manager
 
 router = APIRouter(prefix="/runs", tags=["workflows"])
 
 
-def get_workflow_planner(request: Request) -> WorkflowPlanner:
-    """Construct a planner using application settings and approved built-in tools."""
-    llm = LLMService(request.app.state.settings)
-    registry = build_builtin_tool_registry()
-
-    return WorkflowPlanner(llm, registry)
+def get_workflow_planner(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Iterator[WorkflowPlanner]:
+    """Construct a user-configured planner and close provider clients after use."""
+    try:
+        manager = build_provider_manager(db, user.id, request.app.state.settings)
+    except ProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI provider configuration is unavailable.",
+        ) from exc
+    try:
+        yield WorkflowPlanner(
+            manager,
+            build_application_tool_registry(request.app.state.tool_registrars),
+        )
+    finally:
+        manager.close()
 
 
 @router.post(
@@ -48,12 +59,16 @@ def get_workflow_planner(request: Request) -> WorkflowPlanner:
 )
 def create_workflow(
     payload: WorkflowCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> WorkflowResponse:
     """Create a workflow and persist its tasks."""
-    service = ExecutionService(db)
-    register_builtin_handlers(service)
+    service = build_execution_service(
+        db,
+        request.app.state.settings,
+        tool_registrars=request.app.state.tool_registrars,
+    )
 
     try:
         workflow = service.create_workflow(
@@ -116,13 +131,17 @@ def plan_workflow(
 @router.post("/{run_id}/execute", response_model=WorkflowResponse)
 def execute_workflow(
     run_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> WorkflowResponse:
     """Execute a workflow owned by the authenticated user."""
     workflow = _get_owned_workflow(db, run_id, user.id)
-    service = ExecutionService(db)
-    register_builtin_handlers(service)
+    service = build_execution_service(
+        db,
+        request.app.state.settings,
+        tool_registrars=request.app.state.tool_registrars,
+    )
 
     try:
         service.execute_workflow(

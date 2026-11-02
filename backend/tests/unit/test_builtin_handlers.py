@@ -40,9 +40,7 @@ def test_text_statistics_rejects_non_string_input() -> None:
 
 def test_normalize_whitespace_collapses_spacing() -> None:
     """Replace repeated whitespace with single spaces."""
-    result = normalize_whitespace(
-        {"text": "  AgentOps \n\t tools   "}
-    )
+    result = normalize_whitespace({"text": "  AgentOps \n\t tools   "})
 
     assert result == {"normalized_text": "AgentOps tools"}
 
@@ -55,16 +53,9 @@ def test_normalize_whitespace_rejects_non_string_input() -> None:
 
 def test_find_matching_lines_is_case_insensitive() -> None:
     """Return matching lines without changing their original text."""
-    text = (
-        "Alpha systems\n"
-        "agent tools\n"
-        "AI AGENT platform\n"
-        "No match"
-    )
+    text = "Alpha systems\nagent tools\nAI AGENT platform\nNo match"
 
-    result = find_matching_lines(
-        {"text": text, "query": "agent"}
-    )
+    result = find_matching_lines({"text": text, "query": "agent"})
 
     assert result == {
         "matches": [
@@ -78,9 +69,7 @@ def test_find_matching_lines_is_case_insensitive() -> None:
 def test_find_matching_lines_rejects_blank_query() -> None:
     """Reject search queries containing only whitespace."""
     with pytest.raises(ValueError, match="'query' must be a non-empty string"):
-        find_matching_lines(
-            {"text": "Some content", "query": "   "}
-        )
+        find_matching_lines({"text": "Some content", "query": "   "})
 
 
 def test_find_matching_lines_input_schema_rejects_blank_query() -> None:

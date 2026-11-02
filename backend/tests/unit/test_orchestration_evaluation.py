@@ -52,11 +52,7 @@ def make_successful_task(
             agent_name=agent_name,
             status="succeeded",
             summary=f"{agent_name} completed successfully.",
-            output=(
-                {"value": "completed"}
-                if output is None
-                else output
-            ),
+            output=({"value": "completed"} if output is None else output),
         ),
     )
 
@@ -98,15 +94,9 @@ def make_case() -> OrchestrationEvaluationCase:
     return OrchestrationEvaluationCase(
         name="customer-feedback-analysis",
         goal="Analyze customer feedback",
-        required_agents=frozenset(
-            {"analysis_agent", "report_agent"}
-        ),
-        required_successful_tasks=frozenset(
-            {"analysis", "report"}
-        ),
-        required_dependencies=frozenset(
-            {("report", "analysis")}
-        ),
+        required_agents=frozenset({"analysis_agent", "report_agent"}),
+        required_successful_tasks=frozenset({"analysis", "report"}),
+        required_dependencies=frozenset({("report", "analysis")}),
         required_output_fields=frozenset(
             {
                 ("analysis", "findings"),
@@ -335,9 +325,7 @@ def test_evaluator_detects_missing_output_fields() -> None:
 def test_evaluator_detects_forbidden_output_fields() -> None:
     case = replace(
         make_case(),
-        forbidden_output_fields=frozenset(
-            {("analysis", "internal_secret")}
-        ),
+        forbidden_output_fields=frozenset({("analysis", "internal_secret")}),
     )
 
     result = evaluate_orchestration(
@@ -369,9 +357,7 @@ def test_evaluator_detects_forbidden_output_fields() -> None:
 def test_evaluator_checks_required_output_phrases() -> None:
     case = replace(
         make_case(),
-        required_output_phrases=frozenset(
-            {("analysis", "delivery delays")}
-        ),
+        required_output_phrases=frozenset({("analysis", "delivery delays")}),
     )
 
     result = evaluate_orchestration(
@@ -387,9 +373,7 @@ def test_evaluator_checks_required_output_phrases() -> None:
 def test_evaluator_detects_forbidden_output_phrases() -> None:
     case = replace(
         make_case(),
-        forbidden_output_phrases=frozenset(
-            {("analysis", "guaranteed outcome")}
-        ),
+        forbidden_output_phrases=frozenset({("analysis", "guaranteed outcome")}),
     )
 
     workflow_result = make_result(
@@ -516,9 +500,7 @@ def test_evaluator_score_matches_passed_checks() -> None:
         make_result(),
     )
 
-    expected_score = (
-        sum(result.checks.values()) / len(result.checks)
-    )
+    expected_score = sum(result.checks.values()) / len(result.checks)
 
     assert result.score == expected_score
 
@@ -534,9 +516,7 @@ def test_benchmark_aggregates_multiple_workflows() -> None:
 
     second = make_sample(case=second_case)
 
-    benchmark = evaluate_orchestration_benchmark(
-        [first, second]
-    )
+    benchmark = evaluate_orchestration_benchmark([first, second])
 
     assert benchmark.total_cases == 2
     assert benchmark.passed_cases == 1
@@ -554,19 +534,13 @@ def test_benchmark_rejects_duplicate_case_names() -> None:
     sample = make_sample()
 
     with pytest.raises(ValueError, match="unique"):
-        evaluate_orchestration_benchmark(
-            [sample, sample]
-        )
+        evaluate_orchestration_benchmark([sample, sample])
 
 
 def test_evaluation_report_is_json_serializable() -> None:
-    benchmark = evaluate_orchestration_benchmark(
-        [make_sample()]
-    )
+    benchmark = evaluate_orchestration_benchmark([make_sample()])
 
-    report = build_orchestration_evaluation_report(
-        benchmark
-    )
+    report = build_orchestration_evaluation_report(benchmark)
 
     data = json.loads(report.to_json())
 
@@ -583,13 +557,9 @@ def test_evaluation_report_exposes_failed_case_details() -> None:
         goal="Incorrect goal",
     )
 
-    benchmark = evaluate_orchestration_benchmark(
-        [make_sample(case=case)]
-    )
+    benchmark = evaluate_orchestration_benchmark([make_sample(case=case)])
 
-    report = build_orchestration_evaluation_report(
-        benchmark
-    )
+    report = build_orchestration_evaluation_report(benchmark)
 
     data = report.to_dict()
 

@@ -1,4 +1,3 @@
-
 """Unit tests for the workflow execution service."""
 
 from typing import Any, cast
@@ -23,6 +22,7 @@ def service(session: MagicMock) -> ExecutionService:
     """Provide an execution service using a mocked session."""
     return ExecutionService(cast(Session, session))
 
+
 @pytest.fixture
 def inline_task_runner(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep execution-service unit tests independent of subprocesses."""
@@ -30,7 +30,8 @@ def inline_task_runner(monkeypatch: pytest.MonkeyPatch) -> None:
         "agentops.services.execution.run_task",
         lambda handler, input_data, timeout_seconds: handler(input_data),
     )
-    
+
+
 def test_register_handler(service: ExecutionService) -> None:
     """Register a task handler successfully."""
 
@@ -129,7 +130,8 @@ def test_task_status_values() -> None:
     assert TaskStatus.RUNNING.value == "running"
     assert TaskStatus.SUCCEEDED.value == "succeeded"
     assert TaskStatus.FAILED.value == "failed"
-    
+
+
 def test_task_succeeds_after_retry(
     service: ExecutionService,
     inline_task_runner: None,
@@ -234,4 +236,3 @@ def test_task_succeeds_without_retry(
     assert task.status == TaskStatus.SUCCEEDED.value
     assert task.finished_at is not None
     assert task.error is None
-

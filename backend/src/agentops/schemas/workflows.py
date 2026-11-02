@@ -45,9 +45,7 @@ class TaskCreate(BaseModel):
                 raise ValueError("Dependency keys cannot be blank")
 
             if dependency in seen:
-                raise ValueError(
-                    f"Duplicate dependency key: {dependency}"
-                )
+                raise ValueError(f"Duplicate dependency key: {dependency}")
 
             seen.add(dependency)
             normalized.append(dependency)

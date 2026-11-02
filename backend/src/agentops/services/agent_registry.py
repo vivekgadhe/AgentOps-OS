@@ -65,17 +65,13 @@ class AgentDefinition:
             self.output_model,
             BaseModel,
         ):
-            raise AgentRegistryError(
-                "Agent output_model must be a Pydantic model."
-            )
+            raise AgentRegistryError("Agent output_model must be a Pydantic model.")
 
         try:
             roles = frozenset(self.allowed_roles)
             tools = frozenset(self.allowed_tools)
         except TypeError as exc:
-            raise AgentRegistryError(
-                "Agent roles and tools must be iterable."
-            ) from exc
+            raise AgentRegistryError("Agent roles and tools must be iterable.") from exc
 
         if not roles:
             raise AgentRegistryError("An agent must allow at least one role.")
@@ -86,14 +82,10 @@ class AgentDefinition:
         invalid_roles = roles - VALID_AGENT_ROLES
 
         if invalid_roles:
-            raise AgentRegistryError(
-                f"Invalid agent roles: {', '.join(sorted(invalid_roles))}"
-            )
+            raise AgentRegistryError(f"Invalid agent roles: {', '.join(sorted(invalid_roles))}")
 
         if not all(isinstance(tool, str) and tool.strip() for tool in tools):
-            raise AgentRegistryError(
-                "Every allowed tool name must be a non-empty string."
-            )
+            raise AgentRegistryError("Every allowed tool name must be a non-empty string.")
 
         object.__setattr__(self, "allowed_roles", roles)
         object.__setattr__(self, "allowed_tools", tools)
@@ -121,17 +113,13 @@ class AgentRegistry:
         definition = agent.definition
 
         if not isinstance(definition, AgentDefinition):
-            raise AgentRegistryError(
-                "Agent implementation must expose an AgentDefinition."
-            )
+            raise AgentRegistryError("Agent implementation must expose an AgentDefinition.")
 
         if not callable(agent.run):
             raise AgentRegistryError("Agent implementation must provide run().")
 
         if definition.name in self._agents:
-            raise AgentRegistryError(
-                f"Agent already registered: {definition.name}"
-            )
+            raise AgentRegistryError(f"Agent already registered: {definition.name}")
 
         # Reject misspelled or unregistered tools at registration time.
         for tool_name in definition.allowed_tools:
@@ -139,8 +127,7 @@ class AgentRegistry:
                 self._tool_registry.get(tool_name)
             except ToolNotFoundError as exc:
                 raise AgentRegistryError(
-                    f"Agent '{definition.name}' references unknown tool "
-                    f"'{tool_name}'."
+                    f"Agent '{definition.name}' references unknown tool '{tool_name}'."
                 ) from exc
 
         self._agents[definition.name] = agent
@@ -150,16 +137,11 @@ class AgentRegistry:
         try:
             return self._agents[name]
         except KeyError as exc:
-            raise AgentNotFoundError(
-                f"Agent not registered: {name}"
-            ) from exc
+            raise AgentNotFoundError(f"Agent not registered: {name}") from exc
 
     def list_agents(self) -> list[AgentDefinition]:
         """Return agent definitions in deterministic name order."""
-        return [
-            self._agents[name].definition
-            for name in sorted(self._agents)
-        ]
+        return [self._agents[name].definition for name in sorted(self._agents)]
 
     def authorize(self, name: str, role: str) -> AgentDefinition:
         """Return an agent only if the caller's role is permitted."""
@@ -170,9 +152,7 @@ class AgentRegistry:
             raise AgentAccessDeniedError("Invalid actor role.")
 
         if role not in definition.allowed_roles:
-            raise AgentAccessDeniedError(
-                f"Role '{role}' is not permitted to use agent '{name}'."
-            )
+            raise AgentAccessDeniedError(f"Role '{role}' is not permitted to use agent '{name}'.")
 
         return definition
 
@@ -187,10 +167,7 @@ class AgentRegistry:
         return [
             tool
             for tool in self._tool_registry.list_tools()
-            if (
-                tool.name in definition.allowed_tools
-                and role in tool.allowed_roles
-            )
+            if (tool.name in definition.allowed_tools and role in tool.allowed_roles)
         ]
 
     def execute(
@@ -205,27 +182,19 @@ class AgentRegistry:
         result = agent.run(context)
 
         if not isinstance(result, AgentResult):
-            raise AgentRegistryError(
-                f"Agent '{name}' returned an invalid result type."
-            )
+            raise AgentRegistryError(f"Agent '{name}' returned an invalid result type.")
 
         if result.agent_name != name:
-            raise AgentRegistryError(
-                f"Agent '{name}' returned a result for '{result.agent_name}'."
-            )
+            raise AgentRegistryError(f"Agent '{name}' returned a result for '{result.agent_name}'.")
 
         if result.status == "succeeded":
             try:
-                validated_output = agent.definition.output_model.model_validate(
-                    result.output
-                )
+                validated_output = agent.definition.output_model.model_validate(result.output)
             except ValidationError as exc:
                 raise AgentOutputValidationError(
                     f"Agent '{name}' returned output outside its declared contract."
                 ) from exc
 
-            return result.model_copy(
-                update={"output": validated_output.model_dump(mode="json")}
-            )
+            return result.model_copy(update={"output": validated_output.model_dump(mode="json")})
 
         return result

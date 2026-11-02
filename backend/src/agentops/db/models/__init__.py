@@ -1,5 +1,7 @@
-"""Importing this package registers every table on ``Base.metadata``."""
+"""Importing this package registers every table on Base.metadata."""
 
+from agentops.db.models.ai_provider import AIProviderConfig
+from agentops.db.models.approval import ApprovalRequest
 from agentops.db.models.audit import AuditLog
 from agentops.db.models.enums import (
     AuditOutcome,
@@ -18,10 +20,14 @@ from agentops.db.models.workflow import (
 )
 
 __all__ = [
+    "AIProviderConfig",
+    "ApprovalRequest",
     "AuditLog",
     "AuditOutcome",
     "EventLevel",
     "ExecutionEvent",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
     "TaskDependency",
     "TaskRun",
     "TaskStatus",
@@ -29,6 +35,4 @@ __all__ = [
     "UserRole",
     "WorkflowRun",
     "WorkflowStatus",
-    "KnowledgeChunk",
-    "KnowledgeDocument",
 ]

@@ -39,20 +39,17 @@ class Settings(BaseSettings):
     llm_timeout_s: int = Field(default=30, ge=1, le=300)
 
     # Phase 7 local Ollama services. No hosted API key is required for RAG.
-    ollama_base_url: str = Field(
-        default="http://localhost:11434", min_length=1, max_length=500
-    )
-    ollama_chat_model: str = Field(
-        default="qwen3.5:0.8b", min_length=1, max_length=100
-    )
-    ollama_embedding_model: str = Field(
-        default="embeddinggemma", min_length=1, max_length=100
-    )
+    ollama_base_url: str = Field(default="http://localhost:11434", min_length=1, max_length=500)
+    ollama_chat_model: str = Field(default="qwen3.5:0.8b", min_length=1, max_length=100)
+    ollama_embedding_model: str = Field(default="embeddinggemma", min_length=1, max_length=100)
     ollama_timeout_s: int = Field(default=180, ge=1, le=900)
 
-    knowledge_max_upload_bytes: int = Field(
-        default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024
-    )
+    # Phase 8: encryption key used for API credentials stored in PostgreSQL.
+    ai_credential_encryption_key: SecretStr | None = None
+    ai_provider_timeout_s: int = Field(default=60, ge=1, le=300)
+    approval_ttl_hours: int = Field(default=24, ge=1, le=720)
+
+    knowledge_max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
     knowledge_max_pdf_pages: int = Field(default=200, ge=1, le=1000)
     knowledge_chunk_size_chars: int = Field(default=1200, ge=200, le=5000)
     knowledge_chunk_overlap_chars: int = Field(default=200, ge=0, le=1000)
@@ -96,8 +93,7 @@ class Settings(BaseSettings):
     def _validate_settings(self) -> "Settings":
         if self.knowledge_chunk_overlap_chars >= self.knowledge_chunk_size_chars:
             raise ValueError(
-                "KNOWLEDGE_CHUNK_OVERLAP_CHARS must be smaller than "
-                "KNOWLEDGE_CHUNK_SIZE_CHARS."
+                "KNOWLEDGE_CHUNK_OVERLAP_CHARS must be smaller than KNOWLEDGE_CHUNK_SIZE_CHARS."
             )
         if self.app_env != "dev":
             secret = self.jwt_secret.get_secret_value()

@@ -107,10 +107,7 @@ class OrchestrationEvaluationReport:
                 "average_score": self.average_score,
             },
             "check_pass_rates": dict(self.check_pass_rates),
-            "cases": [
-                result.to_dict()
-                for result in self.case_results
-            ],
+            "cases": [result.to_dict() for result in self.case_results],
         }
 
     def to_json(self) -> str:
@@ -130,16 +127,10 @@ def _collect_output_text(value: Any) -> str:
         return value
 
     if isinstance(value, dict):
-        return " ".join(
-            _collect_output_text(child)
-            for child in value.values()
-        )
+        return " ".join(_collect_output_text(child) for child in value.values())
 
     if isinstance(value, list):
-        return " ".join(
-            _collect_output_text(child)
-            for child in value
-        )
+        return " ".join(_collect_output_text(child) for child in value)
 
     return ""
 
@@ -156,69 +147,40 @@ def evaluate_orchestration(
 
     It does not establish factual accuracy or general semantic quality.
     """
-    plan_tasks = {
-        task.key: task
-        for task in plan.tasks
-    }
+    plan_tasks = {task.key: task for task in plan.tasks}
 
     plan_keys = set(plan_tasks)
 
-    result_keys = [
-        task.key
-        for task in result.tasks
-    ]
+    result_keys = [task.key for task in result.tasks]
 
     result_key_set = set(result_keys)
 
-    result_tasks = {
-        task.key: task
-        for task in result.tasks
-    }
+    result_tasks = {task.key: task for task in result.tasks}
 
-    planned_agents = {
-        task.agent_name
-        for task in plan.tasks
-    }
+    planned_agents = {task.agent_name for task in plan.tasks}
 
     dependency_edges = {
-        (task.key, dependency)
-        for task in plan.tasks
-        for dependency in task.depends_on
+        (task.key, dependency) for task in plan.tasks for dependency in task.depends_on
     }
 
     checks: dict[str, bool] = {
         "goal_matches": (
-            plan.goal.strip() == case.goal.strip()
-            and result.goal.strip() == case.goal.strip()
+            plan.goal.strip() == case.goal.strip() and result.goal.strip() == case.goal.strip()
         ),
-        "result_task_keys_are_unique": (
-            len(result_keys) == len(result_key_set)
-        ),
-        "all_planned_tasks_have_results": (
-            plan_keys <= result_key_set
-        ),
-        "no_unplanned_task_results": (
-            result_key_set <= plan_keys
-        ),
+        "result_task_keys_are_unique": (len(result_keys) == len(result_key_set)),
+        "all_planned_tasks_have_results": (plan_keys <= result_key_set),
+        "no_unplanned_task_results": (result_key_set <= plan_keys),
         "task_agent_assignments_match": all(
-            key in result_tasks
-            and result_tasks[key].agent_name == task.agent_name
+            key in result_tasks and result_tasks[key].agent_name == task.agent_name
             for key, task in plan_tasks.items()
         ),
-        "required_agents_are_present": (
-            case.required_agents <= planned_agents
-        ),
-        "forbidden_agents_are_absent": (
-            not (case.forbidden_agents & planned_agents)
-        ),
+        "required_agents_are_present": (case.required_agents <= planned_agents),
+        "forbidden_agents_are_absent": (not (case.forbidden_agents & planned_agents)),
         "required_tasks_succeeded": all(
-            task_key in result_tasks
-            and result_tasks[task_key].status == "succeeded"
+            task_key in result_tasks and result_tasks[task_key].status == "succeeded"
             for task_key in case.required_successful_tasks
         ),
-        "required_dependencies_are_present": (
-            case.required_dependencies <= dependency_edges
-        ),
+        "required_dependencies_are_present": (case.required_dependencies <= dependency_edges),
     }
 
     # Check whether dependent agents ran only after successful prerequisites.
@@ -233,10 +195,7 @@ def evaluate_orchestration(
         for dependency in task.depends_on:
             dependency_outcome = result_tasks.get(dependency)
 
-            if (
-                dependency_outcome is None
-                or dependency_outcome.status != "succeeded"
-            ):
+            if dependency_outcome is None or dependency_outcome.status != "succeeded":
                 dependencies_respected = False
                 break
 
@@ -258,16 +217,11 @@ def evaluate_orchestration(
 
             continue
 
-        if (
-            agent_result.agent_name != outcome.agent_name
-            or agent_result.status != outcome.status
-        ):
+        if agent_result.agent_name != outcome.agent_name or agent_result.status != outcome.status:
             agent_results_consistent = False
             break
 
-    checks["agent_results_are_consistent"] = (
-        agent_results_consistent
-    )
+    checks["agent_results_are_consistent"] = agent_results_consistent
 
     # Required fields must exist in successful task outputs.
     required_fields_present = True
@@ -284,9 +238,7 @@ def evaluate_orchestration(
             required_fields_present = False
             break
 
-    checks["required_output_fields_are_present"] = (
-        required_fields_present
-    )
+    checks["required_output_fields_are_present"] = required_fields_present
 
     # Forbidden fields must not occur in successful task outputs.
     forbidden_fields_absent = True
@@ -303,9 +255,7 @@ def evaluate_orchestration(
             forbidden_fields_absent = False
             break
 
-    checks["forbidden_output_fields_are_absent"] = (
-        forbidden_fields_absent
-    )
+    checks["forbidden_output_fields_are_absent"] = forbidden_fields_absent
 
     # Required phrases must appear in the output text.
     required_phrases_present = True
@@ -313,25 +263,17 @@ def evaluate_orchestration(
     for task_key, phrase in case.required_output_phrases:
         outcome = result_tasks.get(task_key)
 
-        if (
-            outcome is None
-            or outcome.status != "succeeded"
-            or outcome.result is None
-        ):
+        if outcome is None or outcome.status != "succeeded" or outcome.result is None:
             required_phrases_present = False
             break
 
-        output_text = _collect_output_text(
-            outcome.result.output
-        ).casefold()
+        output_text = _collect_output_text(outcome.result.output).casefold()
 
         if phrase.casefold() not in output_text:
             required_phrases_present = False
             break
 
-    checks["required_output_phrases_are_present"] = (
-        required_phrases_present
-    )
+    checks["required_output_phrases_are_present"] = required_phrases_present
 
     # Forbidden phrases must not appear in the output text.
     forbidden_phrases_absent = True
@@ -339,22 +281,14 @@ def evaluate_orchestration(
     for task_key, phrase in case.forbidden_output_phrases:
         outcome = result_tasks.get(task_key)
 
-        if (
-            outcome is not None
-            and outcome.status == "succeeded"
-            and outcome.result is not None
-        ):
-            output_text = _collect_output_text(
-                outcome.result.output
-            ).casefold()
+        if outcome is not None and outcome.status == "succeeded" and outcome.result is not None:
+            output_text = _collect_output_text(outcome.result.output).casefold()
 
             if phrase.casefold() in output_text:
                 forbidden_phrases_absent = False
                 break
 
-    checks["forbidden_output_phrases_are_absent"] = (
-        forbidden_phrases_absent
-    )
+    checks["forbidden_output_phrases_are_absent"] = forbidden_phrases_absent
 
     # Expected reference values must match exactly.
     expected_values_match = True
@@ -374,32 +308,17 @@ def evaluate_orchestration(
     checks["expected_output_values_match"] = expected_values_match
 
     # A workflow succeeds only if every planned task has one successful result.
-    complete_result = (
-        len(result_keys) == len(result_key_set)
-        and plan_keys == result_key_set
+    complete_result = len(result_keys) == len(result_key_set) and plan_keys == result_key_set
+
+    all_tasks_succeeded = complete_result and all(
+        outcome.status == "succeeded" for outcome in result.tasks
     )
 
-    all_tasks_succeeded = (
-        complete_result
-        and all(
-            outcome.status == "succeeded"
-            for outcome in result.tasks
-        )
-    )
+    expected_workflow_status = "succeeded" if all_tasks_succeeded else "failed"
 
-    expected_workflow_status = (
-        "succeeded" if all_tasks_succeeded else "failed"
-    )
+    checks["workflow_status_is_consistent"] = result.status == expected_workflow_status
 
-    checks["workflow_status_is_consistent"] = (
-        result.status == expected_workflow_status
-    )
-
-    failures = tuple(
-        check_name
-        for check_name, passed in checks.items()
-        if not passed
-    )
+    failures = tuple(check_name for check_name, passed in checks.items() if not passed)
 
     score = sum(checks.values()) / len(checks)
 
@@ -417,19 +336,12 @@ def evaluate_orchestration_benchmark(
 ) -> OrchestrationBenchmarkResult:
     """Evaluate multiple workflow executions and aggregate their scores."""
     if not samples:
-        raise ValueError(
-            "An evaluation benchmark must contain at least one case."
-        )
+        raise ValueError("An evaluation benchmark must contain at least one case.")
 
-    case_names = [
-        sample.case.name
-        for sample in samples
-    ]
+    case_names = [sample.case.name for sample in samples]
 
     if len(case_names) != len(set(case_names)):
-        raise ValueError(
-            "Evaluation benchmark case names must be unique."
-        )
+        raise ValueError("Evaluation benchmark case names must be unique.")
 
     case_results = tuple(
         evaluate_orchestration(
@@ -442,28 +354,16 @@ def evaluate_orchestration_benchmark(
 
     total_cases = len(case_results)
 
-    passed_cases = sum(
-        result.passed
-        for result in case_results
-    )
+    passed_cases = sum(result.passed for result in case_results)
 
     pass_rate = passed_cases / total_cases
 
-    average_score = (
-        sum(result.score for result in case_results)
-        / total_cases
-    )
+    average_score = sum(result.score for result in case_results) / total_cases
 
     check_names = case_results[0].checks
 
     check_pass_rates = {
-        check_name: (
-            sum(
-                result.checks[check_name]
-                for result in case_results
-            )
-            / total_cases
-        )
+        check_name: (sum(result.checks[check_name] for result in case_results) / total_cases)
         for check_name in check_names
     }
 
@@ -484,9 +384,7 @@ def build_orchestration_evaluation_report(
     return OrchestrationEvaluationReport(
         total_cases=benchmark.total_cases,
         passed_cases=benchmark.passed_cases,
-        failed_cases=(
-            benchmark.total_cases - benchmark.passed_cases
-        ),
+        failed_cases=(benchmark.total_cases - benchmark.passed_cases),
         pass_rate=benchmark.pass_rate,
         average_score=benchmark.average_score,
         check_pass_rates=benchmark.check_pass_rates,

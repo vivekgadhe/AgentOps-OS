@@ -55,6 +55,7 @@ class WorkflowRun(TimestampMixin, Base):
         order_by="TaskRun.created_at",
     )
 
+
 class TaskRun(TimestampMixin, Base):
     """One node of a workflow's task graph."""
 

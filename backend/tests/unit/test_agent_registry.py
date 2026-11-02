@@ -91,9 +91,7 @@ def test_registry_registers_and_lists_agents_deterministically() -> None:
     registry.register(make_agent("report_agent"))
     registry.register(make_agent("analysis_agent"))
 
-    assert [
-        agent.name for agent in registry.list_agents()
-    ] == ["analysis_agent", "report_agent"]
+    assert [agent.name for agent in registry.list_agents()] == ["analysis_agent", "report_agent"]
 
 
 def test_registry_rejects_duplicate_agent_names() -> None:
@@ -108,9 +106,7 @@ def test_registry_rejects_duplicate_agent_names() -> None:
 def test_registry_rejects_unknown_allowed_tools() -> None:
     registry = make_registry()
 
-    agent = make_agent(
-        allowed_tools=frozenset({"tool_does_not_exist"})
-    )
+    agent = make_agent(allowed_tools=frozenset({"tool_does_not_exist"}))
 
     with pytest.raises(AgentRegistryError, match="unknown tool"):
         registry.register(agent)
@@ -146,9 +142,7 @@ def test_registry_filters_tools_by_agent_and_user_permissions() -> None:
     registry.register(
         make_agent(
             allowed_roles=frozenset({"admin", "operator", "viewer"}),
-            allowed_tools=frozenset(
-                {"summarize_input", "text_statistics"}
-            ),
+            allowed_tools=frozenset({"summarize_input", "text_statistics"}),
         )
     )
 
@@ -233,14 +227,10 @@ def test_registry_preserves_structured_agent_failure() -> None:
 
 
 def test_agent_context_normalizes_goal_and_preserves_prior_results() -> None:
-    context = make_context(
-        prior_results={"research_agent": {"finding": "Example finding"}}
-    )
+    context = make_context(prior_results={"research_agent": {"finding": "Example finding"}})
 
     assert context.goal == "Analyze the supplied text"
-    assert context.prior_results == {
-        "research_agent": {"finding": "Example finding"}
-    }
+    assert context.prior_results == {"research_agent": {"finding": "Example finding"}}
 
 
 def test_agent_context_rejects_invalid_roles() -> None:

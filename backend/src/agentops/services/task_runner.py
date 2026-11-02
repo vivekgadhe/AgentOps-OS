@@ -9,8 +9,10 @@ from typing import Any
 
 TaskHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
+
 class TaskTimeoutError(TimeoutError):
     """Raised when a task exceeds its allowed execution time."""
+
 
 def _run_handler(
     connection: Connection,
@@ -84,17 +86,14 @@ def run_task(
 
         if not receive_connection.poll(timeout_seconds):
             _stop_process(process)
-            raise TaskTimeoutError(
-                f"Task exceeded its {timeout_seconds}-second timeout"
-            )
+            raise TaskTimeoutError(f"Task exceeded its {timeout_seconds}-second timeout")
 
         try:
             status, payload = receive_connection.recv()
         except EOFError as exc:
             process.join(timeout=2)
             raise RuntimeError(
-                "Task process exited without returning a result "
-                f"(exit code: {process.exitcode})"
+                f"Task process exited without returning a result (exit code: {process.exitcode})"
             ) from exc
 
         process.join(timeout=2)
@@ -103,9 +102,7 @@ def run_task(
             _stop_process(process)
 
         if status == "error":
-            raise RuntimeError(
-                f"Handler failed ({payload['type']}): {payload['message']}"
-            )
+            raise RuntimeError(f"Handler failed ({payload['type']}): {payload['message']}")
 
         if status != "success" or not isinstance(payload, dict):
             raise RuntimeError("Task process returned an invalid result")

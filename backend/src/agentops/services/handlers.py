@@ -1,11 +1,14 @@
 """Built-in task handlers and their declared contracts."""
 
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from agentops.services.execution import ExecutionService
 from agentops.services.tool_registry import ToolDefinition, ToolRegistry
+
+ToolRegistrar = Callable[[ToolRegistry], None]
 
 
 class SummarizeInput(BaseModel):
@@ -197,3 +200,18 @@ def register_builtin_handlers(service: ExecutionService) -> None:
     """Register the canonical built-in tools with the execution service."""
     for definition in _builtin_tool_definitions():
         service.register_tool(definition)
+
+
+def build_application_tool_registry(
+    registrars: Iterable[ToolRegistrar] = (),
+) -> ToolRegistry:
+    """Build the complete runtime registry, including trusted application tools.
+
+    Extension callbacks must register ``ToolDefinition`` objects in code. The
+    ``requires_approval`` flag is therefore controlled by trusted application
+    configuration, never by workflow input or model-generated plans.
+    """
+    registry = build_builtin_tool_registry()
+    for registrar in registrars:
+        registrar(registry)
+    return registry

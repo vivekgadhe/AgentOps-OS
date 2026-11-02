@@ -19,6 +19,4 @@ def test_knowledge_routes_are_registered(client: TestClient) -> None:
 
     missing_paths = expected_paths - registered_paths
 
-    assert not missing_paths, (
-        f"Knowledge routes are missing: {sorted(missing_paths)}"
-    )
+    assert not missing_paths, f"Knowledge routes are missing: {sorted(missing_paths)}"

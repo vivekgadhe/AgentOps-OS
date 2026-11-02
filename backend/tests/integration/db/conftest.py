@@ -114,11 +114,11 @@ def disposable_database(
     """Create throw-away databases and always drop them afterwards."""
     created: list[str] = []
     admin = create_engine(
-    pg_test_url,
-    isolation_level="AUTOCOMMIT",
-    poolclass=NullPool,
-    connect_args={"connect_timeout": 5},
-)
+        pg_test_url,
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+        connect_args={"connect_timeout": 5},
+    )
 
     def create(prefix: str) -> URL:
         name = f"{prefix}_{uuid.uuid4().hex[:12]}"

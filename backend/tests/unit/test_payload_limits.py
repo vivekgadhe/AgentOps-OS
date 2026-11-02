@@ -42,21 +42,13 @@ def test_context_accepts_small_payloads() -> None:
 def test_context_rejects_oversized_prior_results() -> None:
     with pytest.raises(ValidationError, match="maximum allowed size"):
         make_context(
-            prior_results={
-                "analysis": {
-                    "content": "x" * (MAX_CONTEXT_PRIOR_RESULTS_BYTES + 1)
-                }
-            }
+            prior_results={"analysis": {"content": "x" * (MAX_CONTEXT_PRIOR_RESULTS_BYTES + 1)}}
         )
 
 
 def test_context_rejects_oversized_metadata() -> None:
     with pytest.raises(ValidationError, match="maximum allowed size"):
-        make_context(
-            metadata={
-                "description": "x" * (MAX_CONTEXT_METADATA_BYTES + 1)
-            }
-        )
+        make_context(metadata={"description": "x" * (MAX_CONTEXT_METADATA_BYTES + 1)})
 
 
 def test_context_rejects_excessive_nesting() -> None:
@@ -83,9 +75,7 @@ def test_agent_result_rejects_oversized_output() -> None:
             agent_name="analysis_agent",
             status="succeeded",
             summary="Analysis completed.",
-            output={
-                "content": "x" * (MAX_AGENT_OUTPUT_BYTES + 1)
-            },
+            output={"content": "x" * (MAX_AGENT_OUTPUT_BYTES + 1)},
         )
 
 

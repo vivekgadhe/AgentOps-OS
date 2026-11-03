@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     knowledge_chunk_overlap_chars: int = Field(default=200, ge=0, le=1000)
     knowledge_max_chunks_per_document: int = Field(default=5000, ge=1, le=20000)
 
+    # Phase 9: persistent agent memory. Automatic capture is opt-in to avoid
+    # silently retaining user prompts or generated outputs without consent.
+    memory_max_content_chars: int = Field(default=5_000, ge=100, le=20_000)
+    memory_default_ttl_days: int = Field(default=90, ge=1, le=3_650)
+    memory_auto_capture_rag: bool = False
+    memory_retrieval_top_k: int = Field(default=5, ge=1, le=20)
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalize_log_level(cls, value: Any) -> Any:

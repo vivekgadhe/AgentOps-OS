@@ -18,6 +18,7 @@ from agentops.schemas.knowledge import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
 )
+from agentops.services.agent_memory import AgentMemoryService
 from agentops.services.agent_registry import AgentAccessDeniedError, AgentRegistry
 from agentops.services.document_processing import DocumentProcessingError
 from agentops.services.embeddings import EmbeddingServiceError, OllamaEmbeddingClient
@@ -226,7 +227,18 @@ def _run_rag(
             else:
                 raise ValueError("Unsupported RAG agent.")
 
-            result = RAGService(knowledge_base).run_agent(
+            memory_service = AgentMemoryService(
+                db,
+                embeddings,
+                max_content_chars=settings.memory_max_content_chars,
+                default_ttl_days=settings.memory_default_ttl_days,
+            )
+            result = RAGService(
+                knowledge_base,
+                memory_service=memory_service,
+                auto_capture_memory=settings.memory_auto_capture_rag,
+                memory_top_k=settings.memory_retrieval_top_k,
+            ).run_agent(
                 owner_id=user.id,
                 actor_role=user.role,
                 question=payload.query,

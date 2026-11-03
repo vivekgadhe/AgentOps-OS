@@ -11,6 +11,7 @@ from agentops.db.models.enums import (
     WorkflowStatus,
 )
 from agentops.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from agentops.db.models.memory import AgentMemory
 from agentops.db.models.user import User
 from agentops.db.models.workflow import (
     ExecutionEvent,
@@ -23,6 +24,7 @@ __all__ = [
     "AIProviderConfig",
     "ApprovalRequest",
     "AuditLog",
+    "AgentMemory",
     "AuditOutcome",
     "EventLevel",
     "ExecutionEvent",

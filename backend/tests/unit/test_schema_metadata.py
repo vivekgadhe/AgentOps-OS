@@ -32,6 +32,7 @@ EXPECTED_TABLES = {
     "knowledge_chunks",
     "ai_provider_configs",
     "approval_requests",
+    "agent_memories",
 }
 
 POSTGRES_MAX_IDENTIFIER = 63

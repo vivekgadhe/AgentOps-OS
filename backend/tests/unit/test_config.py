@@ -85,3 +85,16 @@ def test_llm_timeout_must_be_between_one_and_300_seconds(
 ) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, llm_timeout_s=timeout)
+
+
+def test_observability_settings_have_safe_defaults() -> None:
+    settings = Settings(_env_file=None, app_env="dev")
+    assert settings.observability_enabled is True
+    assert settings.telemetry_retention_days == 90
+
+
+def test_telemetry_retention_days_are_bounded() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, telemetry_retention_days=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, telemetry_retention_days=3_651)

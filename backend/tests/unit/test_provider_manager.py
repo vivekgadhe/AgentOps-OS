@@ -5,6 +5,7 @@ from typing import TypeVar
 import pytest
 from pydantic import BaseModel
 
+from agentops.core.observability_context import observability_scope
 from agentops.services.providers.base import (
     AllProvidersFailed,
     ProviderAttempt,
@@ -122,3 +123,47 @@ def test_manager_rejects_duplicate_provider_names() -> None:
                 ProviderAttempt("ollama", "two", _WorkingProvider()),
             ]
         )
+
+
+class _RecordingTelemetry:
+    def __init__(self) -> None:
+        self.events: list[dict[str, object]] = []
+
+    def record_llm_attempt(self, **kwargs: object) -> None:
+        self.events.append(kwargs)
+
+
+def test_manager_records_successful_provider_attempt_without_prompt_content() -> None:
+    telemetry = _RecordingTelemetry()
+    manager = ProviderManager(
+        [ProviderAttempt("ollama", "local-model", _WorkingProvider())],
+        telemetry=telemetry,  # type: ignore[arg-type]
+    )
+
+    with observability_scope(component="agent", agent_name="analysis_agent"):
+        manager.generate_structured("private prompt text", output_model=_Output)
+
+    assert len(telemetry.events) == 1
+    event = telemetry.events[0]
+    assert event["provider"] == "ollama"
+    assert event["outcome"] == "success"
+    assert event["attempt_number"] == 1
+    assert event["used_fallback"] is False
+    assert "private prompt text" not in str(event)
+
+
+def test_manager_records_provider_failures_before_fallback() -> None:
+    telemetry = _RecordingTelemetry()
+    manager = ProviderManager(
+        [
+            ProviderAttempt("openai", "first-model", _FailingProvider()),
+            ProviderAttempt("ollama", "local-model", _WorkingProvider()),
+        ],
+        telemetry=telemetry,  # type: ignore[arg-type]
+    )
+
+    manager.generate_structured("prompt", output_model=_Output)
+
+    assert [event["outcome"] for event in telemetry.events] == ["failure", "success"]
+    assert [event["attempt_number"] for event in telemetry.events] == [1, 2]
+    assert telemetry.events[1]["used_fallback"] is True

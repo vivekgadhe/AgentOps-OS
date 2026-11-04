@@ -32,10 +32,11 @@ EXPECTED_TABLES = {
     "ai_provider_configs",
     "approval_requests",
     "agent_memories",
+    "telemetry_events",
 }
 
 EXPECTED_AUDIT_TRIGGERS = {"audit_logs_no_update_delete", "audit_logs_no_truncate"}
-HEAD_REVISION = "0004"
+HEAD_REVISION = "0005"
 
 
 def _ignore_version_table(

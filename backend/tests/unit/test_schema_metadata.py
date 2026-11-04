@@ -33,6 +33,7 @@ EXPECTED_TABLES = {
     "ai_provider_configs",
     "approval_requests",
     "agent_memories",
+    "telemetry_events",
 }
 
 POSTGRES_MAX_IDENTIFIER = 63
@@ -85,7 +86,7 @@ def test_every_foreign_key_declares_its_delete_behaviour() -> None:
         f"{table.name}.{fk.name}"
         for table in Base.metadata.tables.values()
         for fk in table.foreign_key_constraints
-        if fk.ondelete not in {"CASCADE", "RESTRICT"}
+        if fk.ondelete not in {"CASCADE", "RESTRICT", "SET NULL"}
     ]
 
     assert missing == []

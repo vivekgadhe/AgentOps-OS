@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     memory_auto_capture_rag: bool = False
     memory_retrieval_top_k: int = Field(default=5, ge=1, le=20)
 
+    # Phase 10: telemetry stores operational metadata only, never prompts or outputs.
+    observability_enabled: bool = True
+    telemetry_retention_days: int = Field(default=90, ge=1, le=3_650)
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _normalize_log_level(cls, value: Any) -> Any:

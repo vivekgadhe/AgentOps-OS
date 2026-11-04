@@ -1,12 +1,11 @@
 """PostgreSQL integration tests for task approval, pause, and resume."""
 
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from agentops.db.models.approval import ApprovalRequest
 from agentops.db.models.enums import TaskStatus, WorkflowStatus
+from agentops.services._task_runner_test_support import protected_action_handler
 from agentops.services.approval_service import ApprovalService
 from agentops.services.execution import ExecutionService
 from agentops.services.tool_registry import ToolDefinition
@@ -21,11 +20,6 @@ class _ActionOutput(BaseModel):
     result: str
 
 
-def _protected_action(data: dict[str, Any]) -> dict[str, Any]:
-    """Top-level handler so Windows spawn can import it in the child process."""
-    return {"result": str(data["value"]).upper()}
-
-
 def test_protected_tool_pauses_until_admin_approval_then_resumes(orm_session, factory) -> None:
     requester = factory.user(role="operator")
     approver = factory.user(role="admin")
@@ -36,7 +30,7 @@ def test_protected_tool_pauses_until_admin_approval_then_resumes(orm_session, fa
             description="Perform a protected operation.",
             input_model=_ActionInput,
             output_model=_ActionOutput,
-            handler=_protected_action,
+            handler=protected_action_handler,
             requires_approval=True,
         )
     )
@@ -138,7 +132,7 @@ def test_rejection_cancels_task_and_workflow(orm_session, factory) -> None:
     ApprovalService(orm_session).decide(
         approval.id,
         approver_user_id=approver.id,
-        approver_role="admin",
+        approver_role=approver.role,
         approve=False,
         reason="Not permitted.",
     )

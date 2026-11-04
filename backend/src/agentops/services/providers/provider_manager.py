@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Sequence
 from typing import TypeVar
 from uuid import UUID
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from agentops.core.config import Settings
 from agentops.core.encryption import CredentialCipher, CredentialEncryptionError
+from agentops.core.observability_context import current_observability_context
 from agentops.db.models.ai_provider import AIProviderConfig
 from agentops.services.providers.base import (
     AllProvidersFailed,
@@ -25,6 +27,7 @@ from agentops.services.providers.base import (
 from agentops.services.providers.groq_provider import GroqProvider
 from agentops.services.providers.ollama_provider import OllamaProvider
 from agentops.services.providers.openai_provider import OpenAICompatibleProvider
+from agentops.services.telemetry import TelemetryRecorder
 
 logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -33,13 +36,19 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 class ProviderManager:
     """Structured generation with an ordered, observable provider fallback chain."""
 
-    def __init__(self, providers: Sequence[ProviderAttempt]) -> None:
+    def __init__(
+        self,
+        providers: Sequence[ProviderAttempt],
+        *,
+        telemetry: TelemetryRecorder | None = None,
+    ) -> None:
         if not providers:
             raise ValueError("At least one AI provider must be configured.")
         names = [provider.name for provider in providers]
         if len(names) != len(set(names)):
             raise ValueError("Provider names in the fallback chain must be unique.")
         self._providers = tuple(providers)
+        self._telemetry = telemetry
         self.last_provider: str | None = None
         self.last_model: str | None = None
         self.last_attempts: tuple[str, ...] = ()
@@ -63,11 +72,20 @@ class ProviderManager:
 
         for item in self._providers:
             attempted.append(item.name)
+            started = time.perf_counter()
             try:
                 result = item.generator.generate_structured(
                     prompt,
                     output_model=output_model,
                     instructions=instructions,
+                )
+                self._record_attempt(
+                    item.name,
+                    item.model,
+                    outcome="success",
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    attempt_number=len(attempted),
+                    output_schema=output_model.__name__,
                 )
                 self.last_provider = item.name
                 self.last_model = item.model
@@ -81,10 +99,28 @@ class ProviderManager:
                         },
                     )
                 return result
-            except ProviderRefusalError:
+            except ProviderRefusalError as exc:
+                self._record_attempt(
+                    item.name,
+                    item.model,
+                    outcome="refused",
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    attempt_number=len(attempted),
+                    output_schema=output_model.__name__,
+                    error_type=type(exc).__name__,
+                )
                 self.last_attempts = tuple(attempted)
                 raise
             except ProviderError as exc:
+                self._record_attempt(
+                    item.name,
+                    item.model,
+                    outcome="failure",
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    attempt_number=len(attempted),
+                    output_schema=output_model.__name__,
+                    error_type=type(exc).__name__,
+                )
                 errors.append(exc)
                 logger.warning(
                     "ai_provider_attempt_failed",
@@ -96,6 +132,36 @@ class ProviderManager:
 
         self.last_attempts = tuple(attempted)
         raise AllProvidersFailed(attempted) from (errors[-1] if errors else None)
+
+    def _record_attempt(
+        self,
+        provider: str,
+        model: str,
+        *,
+        outcome: str,
+        duration_ms: float,
+        attempt_number: int,
+        output_schema: str,
+        error_type: str | None = None,
+    ) -> None:
+        """Write a best-effort operational event without retaining request content."""
+        if self._telemetry is None:
+            return
+        context = current_observability_context()
+        self._telemetry.record_llm_attempt(
+            provider=provider,
+            model=model,
+            outcome=outcome,
+            duration_ms=duration_ms,
+            error_type=error_type,
+            attempt_number=attempt_number,
+            used_fallback=attempt_number > 1,
+            output_schema=output_schema,
+        )
+        logger.debug(
+            "llm_attempt_instrumented",
+            extra={"component": context.component, "provider": provider},
+        )
 
     def close(self) -> None:
         for item in self._providers:
@@ -234,7 +300,21 @@ def build_provider_manager(
             )
         )
 
-    return ProviderManager(attempts)
+    telemetry: TelemetryRecorder | None = None
+    if settings.observability_enabled:
+        try:
+            from sqlalchemy.engine import Engine
+
+            bind = session.get_bind()
+            if isinstance(bind, Engine):
+                telemetry = TelemetryRecorder(bind, owner_user_id)
+        except Exception as exc:
+            logger.warning(
+                "telemetry_initialization_failed",
+                extra={"error_type": type(exc).__name__},
+            )
+
+    return ProviderManager(attempts, telemetry=telemetry)
 
 
 def _build_attempt(

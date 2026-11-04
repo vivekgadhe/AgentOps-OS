@@ -12,6 +12,7 @@ from agentops.db.models.enums import (
 )
 from agentops.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from agentops.db.models.memory import AgentMemory
+from agentops.db.models.telemetry import TelemetryEvent
 from agentops.db.models.user import User
 from agentops.db.models.workflow import (
     ExecutionEvent,
@@ -31,6 +32,7 @@ __all__ = [
     "KnowledgeChunk",
     "KnowledgeDocument",
     "TaskDependency",
+    "TelemetryEvent",
     "TaskRun",
     "TaskStatus",
     "User",

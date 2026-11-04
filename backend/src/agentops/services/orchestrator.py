@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any, Protocol
 from uuid import UUID
 
+from agentops.core.observability_context import observability_scope
 from agentops.schemas.agents import AgentContext, AgentResult
 from agentops.schemas.orchestration import (
     OrchestrationPlan,
@@ -286,11 +287,19 @@ class AgentOrchestrator:
             )
 
             try:
-                agent_result = self._execute_with_retries(
-                    task.agent_name,
-                    context,
-                    execution_budget,
+                workflow_id = (
+                    self._state_store.workflow_id if self._state_store is not None else None
                 )
+                with observability_scope(
+                    component="agent",
+                    agent_name=task.agent_name,
+                    workflow_run_id=workflow_id,
+                ):
+                    agent_result = self._execute_with_retries(
+                        task.agent_name,
+                        context,
+                        execution_budget,
+                    )
             except Exception as exc:
                 logger.exception(
                     "Agent task execution failed: task_key=%s, agent_name=%s",

@@ -18,3 +18,8 @@ def slow_handler(data: dict[str, Any]) -> dict[str, Any]:
 def invalid_handler(data: dict[str, Any]) -> Any:
     """Return an invalid result to exercise validation."""
     return "invalid"
+
+
+def protected_action_handler(data: dict[str, Any]) -> dict[str, Any]:
+    """Execute the protected-action handler in a spawn-importable module."""
+    return {"result": str(data["value"]).upper()}

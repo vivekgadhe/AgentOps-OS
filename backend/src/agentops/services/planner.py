@@ -5,6 +5,7 @@ from typing import Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from agentops.core.observability_context import observability_scope
 from agentops.schemas.planning import WorkflowPlan
 from agentops.schemas.workflows import TaskCreate, WorkflowCreate
 from agentops.services.tool_registry import (
@@ -117,11 +118,12 @@ class WorkflowPlanner:
             ensure_ascii=False,
         )
 
-        generated_plan = self._llm.generate_structured(
-            prompt,
-            output_model=WorkflowPlan,
-            instructions=PLANNER_INSTRUCTIONS,
-        )
+        with observability_scope(component="planner"):
+            generated_plan = self._llm.generate_structured(
+                prompt,
+                output_model=WorkflowPlan,
+                instructions=PLANNER_INSTRUCTIONS,
+            )
 
         if not isinstance(generated_plan, WorkflowPlan):
             raise PlanningOutputError("The model did not return a valid structured workflow plan.")

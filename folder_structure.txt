@@ -1,55 +1,175 @@
-AgentOps-OS/
-│
-├── .env.example
-├── .gitignore
-├── Makefile
-├── README.md
-├── docker-compose.yml
-│
+AgentOps-OS — source tree (Phase 10 package)
+
+├── backend/
+│   ├── migrations/
+│   │   ├── versions/
+│   │   │   ├── 0001_initial_schema.py
+│   │   │   ├── 0002_knowledge_base.py
+│   │   │   ├── 0003_ai_providers_and_approvals.py
+│   │   │   ├── 0004_persistent_agent_memory.py
+│   │   │   └── 0005_observability_telemetry.py
+│   │   ├── env.py
+│   │   └── script.py.mako
+│   ├── src/
+│   │   └── agentops/
+│   │       ├── api/
+│   │       │   ├── v1/
+│   │       │   │   ├── ai_providers.py
+│   │       │   │   ├── approvals.py
+│   │       │   │   ├── auth.py
+│   │       │   │   ├── health.py
+│   │       │   │   ├── knowledge.py
+│   │       │   │   ├── memories.py
+│   │       │   │   ├── observability.py
+│   │       │   │   ├── router.py
+│   │       │   │   └── runs.py
+│   │       │   └── deps.py
+│   │       ├── core/
+│   │       │   ├── config.py
+│   │       │   ├── context.py
+│   │       │   ├── encryption.py
+│   │       │   ├── logging.py
+│   │       │   ├── middleware.py
+│   │       │   ├── observability_context.py
+│   │       │   └── security.py
+│   │       ├── db/
+│   │       │   ├── models/
+│   │       │   │   ├── __init__.py
+│   │       │   │   ├── ai_provider.py
+│   │       │   │   ├── approval.py
+│   │       │   │   ├── audit.py
+│   │       │   │   ├── enums.py
+│   │       │   │   ├── knowledge.py
+│   │       │   │   ├── memory.py
+│   │       │   │   ├── telemetry.py
+│   │       │   │   ├── user.py
+│   │       │   │   └── workflow.py
+│   │       │   ├── base.py
+│   │       │   ├── guards.py
+│   │       │   └── session.py
+│   │       ├── schemas/
+│   │       │   ├── agent_outputs.py
+│   │       │   ├── agents.py
+│   │       │   ├── ai_providers.py
+│   │       │   ├── approvals.py
+│   │       │   ├── auth.py
+│   │       │   ├── health.py
+│   │       │   ├── knowledge.py
+│   │       │   ├── memories.py
+│   │       │   ├── observability.py
+│   │       │   ├── orchestration.py
+│   │       │   ├── payload_limits.py
+│   │       │   ├── planning.py
+│   │       │   └── workflows.py
+│   │       ├── services/
+│   │       │   ├── providers/
+│   │       │   │   ├── ___init__.py
+│   │       │   │   ├── base.py
+│   │       │   │   ├── groq_provider.py
+│   │       │   │   ├── ollama_provider.py
+│   │       │   │   ├── openai_provider.py
+│   │       │   │   └── provider_manager.py
+│   │       │   ├── __init__.py
+│   │       │   ├── _task_runner_test_support.py
+│   │       │   ├── agent_memory.py
+│   │       │   ├── agent_registry.py
+│   │       │   ├── agent_state.py
+│   │       │   ├── approval_service.py
+│   │       │   ├── document_processing.py
+│   │       │   ├── embeddings.py
+│   │       │   ├── execution.py
+│   │       │   ├── execution_factory.py
+│   │       │   ├── handlers.py
+│   │       │   ├── knowledge_base.py
+│   │       │   ├── llm.py
+│   │       │   ├── memory_safety.py
+│   │       │   ├── ollama_generation.py
+│   │       │   ├── orchestration_evaluation.py
+│   │       │   ├── orchestrator.py
+│   │       │   ├── planner.py
+│   │       │   ├── planner_evaluation.py
+│   │       │   ├── rag.py
+│   │       │   ├── specialized_agents.py
+│   │       │   ├── task_runner.py
+│   │       │   ├── telemetry.py
+│   │       │   └── tool_registry.py
+│   │       ├── __init__.py
+│   │       └── main.py
+│   ├── tests/
+│   │   ├── integration/
+│   │   │   ├── db/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── conftest.py
+│   │   │   │   ├── factories.py
+│   │   │   │   ├── test_approval_workflow.py
+│   │   │   │   ├── test_audit_immutability.py
+│   │   │   │   ├── test_constraints.py
+│   │   │   │   ├── test_migrations.py
+│   │   │   │   ├── test_models.py
+│   │   │   │   └── test_observability.py
+│   │   │   ├── __init__.py
+│   │   │   ├── conftest.py
+│   │   │   ├── test_agent_memory_pgvector.py
+│   │   │   ├── test_health_real_db.py
+│   │   │   ├── test_knowledge_pgvector.py
+│   │   │   └── test_workflow_execution.py
+│   │   ├── smoke/
+│   │   │   └── test_health.py
+│   │   ├── unit/
+│   │   │   ├── __init__.py
+│   │   │   ├── test_agent_memory.py
+│   │   │   ├── test_agent_registry.py
+│   │   │   ├── test_agent_state.py
+│   │   │   ├── test_builtin_handlers.py
+│   │   │   ├── test_config.py
+│   │   │   ├── test_credential_encryption.py
+│   │   │   ├── test_db_guards.py
+│   │   │   ├── test_document_processing.py
+│   │   │   ├── test_embeddings.py
+│   │   │   ├── test_execution_factory.py
+│   │   │   ├── test_execution_service.py
+│   │   │   ├── test_knowledge_routes.py
+│   │   │   ├── test_llm.py
+│   │   │   ├── test_logging.py
+│   │   │   ├── test_memory_routes.py
+│   │   │   ├── test_observability.py
+│   │   │   ├── test_ollama_generation.py
+│   │   │   ├── test_orchestration_evaluation.py
+│   │   │   ├── test_orchestrator.py
+│   │   │   ├── test_orchestrator_memory.py
+│   │   │   ├── test_payload_limits.py
+│   │   │   ├── test_phase8_routes.py
+│   │   │   ├── test_planner.py
+│   │   │   ├── test_planner_evaluation.py
+│   │   │   ├── test_planning_endpoint.py
+│   │   │   ├── test_provider_manager.py
+│   │   │   ├── test_rag.py
+│   │   │   ├── test_rag_memory.py
+│   │   │   ├── test_schema_metadata.py
+│   │   │   ├── test_security.py
+│   │   │   ├── test_specialized_agents.py
+│   │   │   ├── test_task_runner.py
+│   │   │   ├── test_telemetry.py
+│   │   │   ├── test_tool_contracts.py
+│   │   │   ├── test_tool_registry.py
+│   │   │   └── test_workflow_dependencies.py
+│   │   ├── __init__.py
+│   │   └── conftest.py
+│   ├── .python-version
+│   ├── alembic.ini
+│   ├── PHASE10_IMPLEMENTATION.md
+│   ├── PHASE9_IMPLEMENTATION.md
+│   ├── pyproject.toml
+│   └── uv.lock
 ├── docker/
 │   └── postgres/
 │       └── init/
 │           └── 01-create-test-db.sql
-│
-└── backend/
-    ├── .python-version
-    ├── pyproject.toml
-    │
-    ├── src/
-    │   └── agentops/
-    │       ├── __init__.py
-    │       ├── main.py
-    │       │
-    │       ├── api/
-    │       │   ├── __init__.py
-    │       │   ├── deps.py
-    │       │   └── v1/
-    │       │       ├── __init__.py
-    │       │       ├── health.py
-    │       │       └── router.py
-    │       │
-    │       ├── core/
-    │       │   ├── __init__.py
-    │       │   ├── config.py
-    │       │   ├── context.py
-    │       │   ├── logging.py
-    │       │   └── middleware.py
-    │       │
-    │       ├── db/
-    │       │   ├── __init__.py
-    │       │   └── session.py
-    │       │
-    │       └── schemas/
-    │           ├── __init__.py
-    │           └── health.py
-    │
-    └── tests/
-        ├── conftest.py
-        ├── unit/
-        │   ├── test_config.py
-        │   └── test_logging.py
-        ├── smoke/
-        │   └── test_health.py
-        └── integration/
-            ├── conftest.py
-            └── test_health_real_db.py
+├── .env.example
+├── .gitignore
+├── .python-version
+├── docker-compose.yml
+├── folder_structure.txt
+├── Makefile
+├── PHASE8_IMPLEMENTATION.md
+└── README.md

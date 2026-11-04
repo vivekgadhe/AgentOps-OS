@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
+from agentops.core.observability_context import observability_scope
 from agentops.schemas.agents import AgentContext, AgentResult
 from agentops.services.agent_memory import AgentMemoryService, MemorySearchHit
 from agentops.services.agent_registry import AgentRegistry
@@ -140,7 +141,8 @@ class RAGService:
         )
 
         try:
-            answer = registry.execute(agent_name, context)
+            with observability_scope(component="rag", agent_name=agent_name):
+                answer = registry.execute(agent_name, context)
         except Exception as exc:
             raise RAGGenerationError(
                 "The selected agent could not complete the RAG request."

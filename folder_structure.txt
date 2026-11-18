@@ -1,19 +1,23 @@
-AgentOps-OS — source tree (Phase 10 package)
-
-├── backend/
-│   ├── migrations/
-│   │   ├── versions/
+﻿AgentOps-OS/
+├── backend
+│   ├── migrations
+│   │   ├── versions
 │   │   │   ├── 0001_initial_schema.py
 │   │   │   ├── 0002_knowledge_base.py
 │   │   │   ├── 0003_ai_providers_and_approvals.py
 │   │   │   ├── 0004_persistent_agent_memory.py
-│   │   │   └── 0005_observability_telemetry.py
+│   │   │   ├── 0005_observability_telemetry.py
+│   │   │   ├── 0006_auth_action_tokens.py
+│   │   │   ├── 0007_email_otp_security.py
+│   │   │   └── 0008_public_registration_otp.py
 │   │   ├── env.py
 │   │   └── script.py.mako
-│   ├── src/
-│   │   └── agentops/
-│   │       ├── api/
-│   │       │   ├── v1/
+│   ├── scripts
+│   │   └── manage_users.py
+│   ├── src
+│   │   └── agentops
+│   │       ├── api
+│   │       │   ├── v1
 │   │       │   │   ├── ai_providers.py
 │   │       │   │   ├── approvals.py
 │   │       │   │   ├── auth.py
@@ -24,7 +28,7 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │       │   │   ├── router.py
 │   │       │   │   └── runs.py
 │   │       │   └── deps.py
-│   │       ├── core/
+│   │       ├── core
 │   │       │   ├── config.py
 │   │       │   ├── context.py
 │   │       │   ├── encryption.py
@@ -32,12 +36,13 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │       │   ├── middleware.py
 │   │       │   ├── observability_context.py
 │   │       │   └── security.py
-│   │       ├── db/
-│   │       │   ├── models/
+│   │       ├── db
+│   │       │   ├── models
 │   │       │   │   ├── __init__.py
 │   │       │   │   ├── ai_provider.py
 │   │       │   │   ├── approval.py
 │   │       │   │   ├── audit.py
+│   │       │   │   ├── auth_action_token.py
 │   │       │   │   ├── enums.py
 │   │       │   │   ├── knowledge.py
 │   │       │   │   ├── memory.py
@@ -47,7 +52,7 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │       │   ├── base.py
 │   │       │   ├── guards.py
 │   │       │   └── session.py
-│   │       ├── schemas/
+│   │       ├── schemas
 │   │       │   ├── agent_outputs.py
 │   │       │   ├── agents.py
 │   │       │   ├── ai_providers.py
@@ -61,8 +66,8 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │       │   ├── payload_limits.py
 │   │       │   ├── planning.py
 │   │       │   └── workflows.py
-│   │       ├── services/
-│   │       │   ├── providers/
+│   │       ├── services
+│   │       │   ├── providers
 │   │       │   │   ├── ___init__.py
 │   │       │   │   ├── base.py
 │   │       │   │   ├── groq_provider.py
@@ -75,7 +80,9 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │       │   ├── agent_registry.py
 │   │       │   ├── agent_state.py
 │   │       │   ├── approval_service.py
+│   │       │   ├── auth_otp.py
 │   │       │   ├── document_processing.py
+│   │       │   ├── email.py
 │   │       │   ├── embeddings.py
 │   │       │   ├── execution.py
 │   │       │   ├── execution_factory.py
@@ -95,14 +102,15 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │       │   └── tool_registry.py
 │   │       ├── __init__.py
 │   │       └── main.py
-│   ├── tests/
-│   │   ├── integration/
-│   │   │   ├── db/
+│   ├── tests
+│   │   ├── integration
+│   │   │   ├── db
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── conftest.py
 │   │   │   │   ├── factories.py
 │   │   │   │   ├── test_approval_workflow.py
 │   │   │   │   ├── test_audit_immutability.py
+│   │   │   │   ├── test_auth_invitation_flows.py
 │   │   │   │   ├── test_constraints.py
 │   │   │   │   ├── test_migrations.py
 │   │   │   │   ├── test_models.py
@@ -113,18 +121,20 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │   │   ├── test_health_real_db.py
 │   │   │   ├── test_knowledge_pgvector.py
 │   │   │   └── test_workflow_execution.py
-│   │   ├── smoke/
+│   │   ├── smoke
 │   │   │   └── test_health.py
-│   │   ├── unit/
+│   │   ├── unit
 │   │   │   ├── __init__.py
 │   │   │   ├── test_agent_memory.py
 │   │   │   ├── test_agent_registry.py
 │   │   │   ├── test_agent_state.py
+│   │   │   ├── test_auth_otp.py
 │   │   │   ├── test_builtin_handlers.py
 │   │   │   ├── test_config.py
 │   │   │   ├── test_credential_encryption.py
 │   │   │   ├── test_db_guards.py
 │   │   │   ├── test_document_processing.py
+│   │   │   ├── test_email_service.py
 │   │   │   ├── test_embeddings.py
 │   │   │   ├── test_execution_factory.py
 │   │   │   ├── test_execution_service.py
@@ -157,19 +167,153 @@ AgentOps-OS — source tree (Phase 10 package)
 │   │   └── conftest.py
 │   ├── .python-version
 │   ├── alembic.ini
-│   ├── PHASE10_IMPLEMENTATION.md
-│   ├── PHASE9_IMPLEMENTATION.md
 │   ├── pyproject.toml
 │   └── uv.lock
-├── docker/
-│   └── postgres/
-│       └── init/
+├── docker
+│   └── postgres
+│       └── init
 │           └── 01-create-test-db.sql
+├── frontend
+│   ├── public
+│   │   ├── auth-waves.svg
+│   │   └── favicon.svg
+│   ├── src
+│   │   ├── app
+│   │   │   ├── App.tsx
+│   │   │   ├── AppRouter.tsx
+│   │   │   ├── providers.tsx
+│   │   │   ├── query-client.ts
+│   │   │   └── router.tsx
+│   │   ├── components
+│   │   │   ├── navbar
+│   │   │   │   └── WorkspaceNavbar.tsx
+│   │   │   ├── sidebar
+│   │   │   │   └── WorkspaceSidebar.tsx
+│   │   │   └── ui
+│   │   │       ├── Button.tsx
+│   │   │       └── TextInput.tsx
+│   │   ├── features
+│   │   │   ├── agents
+│   │   │   │   ├── components
+│   │   │   │   │   ├── AgentExecutionStatus.tsx
+│   │   │   │   │   ├── ChatInput.tsx
+│   │   │   │   │   └── ChatMessage.tsx
+│   │   │   │   └── AgentsPage.tsx
+│   │   │   ├── analytics
+│   │   │   │   ├── AgentAnalytics.tsx
+│   │   │   │   ├── AnalyticsDashboard.tsx
+│   │   │   │   ├── EventExplorer.tsx
+│   │   │   │   ├── PerformanceCharts.tsx
+│   │   │   │   └── ProviderAnalytics.tsx
+│   │   │   ├── approvals
+│   │   │   │   ├── ApprovalActions.tsx
+│   │   │   │   ├── ApprovalDetails.tsx
+│   │   │   │   └── ApprovalList.tsx
+│   │   │   ├── auth
+│   │   │   │   ├── auth.api.ts
+│   │   │   │   ├── auth.types.ts
+│   │   │   │   ├── AuthProvider.tsx
+│   │   │   │   ├── ForgotPasswordPage.tsx
+│   │   │   │   ├── LoginPage.tsx
+│   │   │   │   ├── ProtectedRoute.tsx
+│   │   │   │   ├── RegisterPage.tsx
+│   │   │   │   ├── token-storage.test.ts
+│   │   │   │   └── token-storage.ts
+│   │   │   ├── dashboard
+│   │   │   │   ├── dashboard.api.ts
+│   │   │   │   ├── Dashboard.tsx
+│   │   │   │   ├── dashboard.types.ts
+│   │   │   │   ├── format.ts
+│   │   │   │   ├── RecentActivity.tsx
+│   │   │   │   ├── StatisticsCards.tsx
+│   │   │   │   └── WorkflowChart.tsx
+│   │   │   ├── invitations
+│   │   │   │   └── InvitationManagement.tsx
+│   │   │   ├── knowledge
+│   │   │   │   ├── components
+│   │   │   │   │   ├── DocumentDetails.tsx
+│   │   │   │   │   ├── DocumentList.tsx
+│   │   │   │   │   ├── DocumentUpload.tsx
+│   │   │   │   │   └── KnowledgeSearch.tsx
+│   │   │   │   ├── hooks
+│   │   │   │   │   └── useKnowledge.ts
+│   │   │   │   └── KnowledgePage.tsx
+│   │   │   ├── memory
+│   │   │   │   ├── components
+│   │   │   │   │   ├── MemoryDetails.tsx
+│   │   │   │   │   ├── MemoryForm.tsx
+│   │   │   │   │   ├── MemoryList.tsx
+│   │   │   │   │   └── MemorySearch.tsx
+│   │   │   │   ├── hooks
+│   │   │   │   │   └── useMemory.ts
+│   │   │   │   └── MemoryPage.tsx
+│   │   │   ├── settings
+│   │   │   │   ├── AgentSettings.tsx
+│   │   │   │   ├── GeneralSettings.tsx
+│   │   │   │   ├── IntegrationSettings.tsx
+│   │   │   │   ├── SecuritySettings.tsx
+│   │   │   │   ├── SettingsDashboard.tsx
+│   │   │   │   ├── ToolSettings.tsx
+│   │   │   │   └── UserSettings.tsx
+│   │   │   └── workflows
+│   │   │       ├── NodeConfiguration.tsx
+│   │   │       ├── NodePalette.tsx
+│   │   │       ├── WorkflowBuilder.tsx
+│   │   │       ├── WorkflowCanvas.tsx
+│   │   │       ├── WorkflowExecution.tsx
+│   │   │       ├── WorkflowList.tsx
+│   │   │       ├── workflow-utils.test.ts
+│   │   │       └── workflow-utils.ts
+│   │   ├── layouts
+│   │   │   ├── AuthLayout.tsx
+│   │   │   └── DashboardLayout.tsx
+│   │   ├── lib
+│   │   │   ├── api-client.ts
+│   │   │   ├── api-error.test.ts
+│   │   │   ├── api-error.ts
+│   │   │   └── cn.ts
+│   │   ├── pages
+│   │   │   └── WorkspaceHome.tsx
+│   │   ├── services
+│   │   │   ├── agent.service.test.ts
+│   │   │   ├── agent.service.ts
+│   │   │   ├── analytics.service.test.ts
+│   │   │   ├── analytics.service.ts
+│   │   │   ├── api.ts
+│   │   │   ├── approval.service.ts
+│   │   │   ├── auth.service.ts
+│   │   │   ├── knowledge.service.test.ts
+│   │   │   ├── knowledge.service.ts
+│   │   │   ├── memory.service.test.ts
+│   │   │   ├── memory.service.ts
+│   │   │   ├── settings.service.test.ts
+│   │   │   ├── settings.service.ts
+│   │   │   └── workflow.service.ts
+│   │   ├── styles
+│   │   │   └── globals.css
+│   │   ├── types
+│   │   │   ├── knowledge.ts
+│   │   │   ├── memory.ts
+│   │   │   └── observability.ts
+│   │   ├── main.tsx
+│   │   └── vite-env.d.ts
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── .npmrc
+│   ├── .nvmrc
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   ├── verify-phase1.ps1
+│   ├── vite.config.ts
+│   └── vitest.config.ts
 ├── .env.example
 ├── .gitignore
 ├── .python-version
+├── architecture.txt
 ├── docker-compose.yml
-├── folder_structure.txt
 ├── Makefile
-├── PHASE8_IMPLEMENTATION.md
 └── README.md

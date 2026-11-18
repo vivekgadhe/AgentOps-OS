@@ -3,6 +3,7 @@
 from agentops.db.models.ai_provider import AIProviderConfig
 from agentops.db.models.approval import ApprovalRequest
 from agentops.db.models.audit import AuditLog
+from agentops.db.models.auth_action_token import AuthActionToken
 from agentops.db.models.enums import (
     AuditOutcome,
     EventLevel,
@@ -23,6 +24,7 @@ from agentops.db.models.workflow import (
 
 __all__ = [
     "AIProviderConfig",
+    "AuthActionToken",
     "ApprovalRequest",
     "AuditLog",
     "AgentMemory",

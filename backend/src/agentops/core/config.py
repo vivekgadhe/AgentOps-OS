@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = SecretStr(INSECURE_DEV_JWT_SECRET)
     access_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
 
+    # SMTP delivery and short-lived email OTPs for registration, invitations and password recovery.
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from_email: str | None = None
+    smtp_from_name: str = Field(default="AgentOps-OS", min_length=1, max_length=100)
+    smtp_starttls: bool = True
+    smtp_timeout_s: int = Field(default=15, ge=1, le=60)
+    otp_pepper: SecretStr | None = None
+    otp_expiry_minutes: int = Field(default=10, ge=3, le=30)
+    otp_max_attempts: int = Field(default=5, ge=1, le=10)
+    otp_resend_cooldown_seconds: int = Field(default=60, ge=15, le=600)
+    otp_max_requests_per_hour: int = Field(default=5, ge=1, le=20)
+
     # Existing hosted LLM integration remains available to non-RAG workflows.
     openai_api_key: SecretStr | None = None
     openai_model: str = Field(default="gpt-5.5", min_length=1, max_length=100)
@@ -106,6 +121,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "KNOWLEDGE_CHUNK_OVERLAP_CHARS must be smaller than KNOWLEDGE_CHUNK_SIZE_CHARS."
             )
+        smtp_values = (self.smtp_host, self.smtp_from_email)
+        if any(smtp_values) and not all(smtp_values):
+            raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL must be configured together.")
+        if bool(self.smtp_username) != (self.smtp_password is not None):
+            raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together.")
+        if self.app_env == "prod" and not all(smtp_values):
+            raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required in production.")
+        if self.app_env == "prod" and self.otp_pepper is None:
+            raise ValueError("OTP_PEPPER must be configured in production.")
         if self.app_env != "dev":
             secret = self.jwt_secret.get_secret_value()
             if secret == INSECURE_DEV_JWT_SECRET or len(secret) < MIN_SECRET_LENGTH:

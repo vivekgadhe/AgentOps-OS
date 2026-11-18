@@ -4,6 +4,11 @@ from pydantic import ValidationError
 from agentops.core.config import INSECURE_DEV_JWT_SECRET, Settings
 
 STRONG_SECRET = "x" * 32
+PRODUCTION_EMAIL_SETTINGS = {
+    "smtp_host": "smtp.example.test",
+    "smtp_from_email": "noreply@example.test",
+    "otp_pepper": "test-only-otp-pepper-not-a-real-secret",
+}
 
 
 def test_dev_allows_the_default_secret() -> None:
@@ -13,7 +18,12 @@ def test_dev_allows_the_default_secret() -> None:
 
 def test_prod_rejects_the_default_secret() -> None:
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, app_env="prod", jwt_secret=INSECURE_DEV_JWT_SECRET)
+        Settings(
+            _env_file=None,
+            app_env="prod",
+            jwt_secret=INSECURE_DEV_JWT_SECRET,
+            **PRODUCTION_EMAIL_SETTINGS,
+        )
 
 
 def test_test_environment_rejects_the_default_secret() -> None:
@@ -23,11 +33,21 @@ def test_test_environment_rejects_the_default_secret() -> None:
 
 def test_prod_rejects_a_short_secret() -> None:
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, app_env="prod", jwt_secret="too-short")
+        Settings(
+            _env_file=None,
+            app_env="prod",
+            jwt_secret="too-short",
+            **PRODUCTION_EMAIL_SETTINGS,
+        )
 
 
 def test_prod_accepts_a_long_secret() -> None:
-    settings = Settings(_env_file=None, app_env="prod", jwt_secret=STRONG_SECRET)
+    settings = Settings(
+        _env_file=None,
+        app_env="prod",
+        jwt_secret=STRONG_SECRET,
+        **PRODUCTION_EMAIL_SETTINGS,
+    )
     assert settings.app_env == "prod"
 
 

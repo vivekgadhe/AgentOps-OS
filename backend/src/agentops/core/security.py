@@ -1,5 +1,6 @@
 """Password hashing and JWT access-token utilities."""
 
+import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -105,3 +106,11 @@ def decode_access_token(token: str, secret: str) -> dict[str, Any]:
         raise TokenError("Invalid access-token subject.")
 
     return claims
+
+
+def hash_action_token(token: str) -> str:
+    """Return a fixed-length digest suitable for storing one-time action tokens."""
+    normalized = token.strip()
+    if not normalized or len(normalized) > 512:
+        raise ValueError("Action token is invalid.")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()

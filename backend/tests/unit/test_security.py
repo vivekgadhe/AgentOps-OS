@@ -6,6 +6,7 @@ from agentops.core.security import (
     TokenError,
     create_access_token,
     decode_access_token,
+    hash_action_token,
     hash_password,
     password_needs_rehash,
     verify_password,
@@ -90,3 +91,19 @@ def test_empty_subject_is_rejected() -> None:
             secret=TEST_SECRET,
             expires_in=timedelta(minutes=5),
         )
+
+
+def test_action_token_hash_is_fixed_length_and_deterministic() -> None:
+    first = hash_action_token("single-use-token")
+    second = hash_action_token("single-use-token")
+
+    assert first == second
+    assert len(first) == 64
+    assert "single-use-token" not in first
+
+
+def test_action_token_hash_rejects_blank_or_oversized_values() -> None:
+    with pytest.raises(ValueError, match="invalid"):
+        hash_action_token("  ")
+    with pytest.raises(ValueError, match="invalid"):
+        hash_action_token("x" * 513)

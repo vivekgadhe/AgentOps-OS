@@ -1,0 +1,78 @@
+                    AGENTOPS-OS PLATFORM
+                             |
+                             |
+                    USER / APPLICATION
+                             |
+                             v
+                   FASTAPI BACKEND
+                             |
+                   Request Middleware
+                   Authentication
+                   Authorization
+                             |
+                             v
+                  API ROUTER (/api/v1)
+                             |
+       +---------------------+----------------------+
+       |                     |                      |
+       v                     v                      v
+  AUTHENTICATION        WORKFLOW APIs           KNOWLEDGE APIs
+       |                     |                      |
+       |                     v                      v
+       |                WORKFLOW PLANNER       DOCUMENT PROCESSING
+       |                     |                      |
+       |                     v                      v
+       |               AGENT ORCHESTRATOR      DOCUMENT CHUNKING
+       |                     |                      |
+       |                     v                      v
+       |                AGENT REGISTRY          EMBEDDINGS
+       |                     |                      |
+       |                     v                      v
+       |               SPECIALIZED AGENTS       VECTOR SEARCH
+       |                     |                      |
+       |                     v                      |
+       |                TOOL REGISTRY                |
+       |                     |                      |
+       |                     v                      |
+       |               TASK EXECUTION                |
+       |                     |                      |
+       +---------------------+----------------------+
+                             |
+                             v
+                   AI PROVIDER MANAGER
+                             |
+              +--------------+--------------+
+              |              |              |
+              v              v              v
+           OpenAI           Groq          Ollama
+          Hosted          Hosted          Local
+                                             |
+                                  +----------+----------+
+                                  |                     |
+                                  v                     v
+                             LLM MODEL           EMBEDDING MODEL
+                                  |                     |
+                                  +----------+----------+
+                                             |
+                                             v
+                                     AGENT EXECUTION
+                                             |
+              +------------------------------+------------------+
+              |                              |                  |
+              v                              v                  v
+       PERSISTENT MEMORY               HUMAN APPROVAL       OBSERVABILITY
+              |                              |                  |
+              v                              v                  v
+       Memory Retrieval               Approval Service     Telemetry
+       Memory Ranking                 Audit Records         Analytics
+       Memory Safety                  Workflow Resume       Performance
+              |                              |                  |
+              +------------------------------+------------------+
+                                             |
+                                             v
+                                     POSTGRESQL
+                                             |
+                                       PGVECTOR
+                                             |
+                                             v
+                                      DATA STORAGE

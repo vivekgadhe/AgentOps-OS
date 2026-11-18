@@ -34,6 +34,7 @@ EXPECTED_TABLES = {
     "approval_requests",
     "agent_memories",
     "telemetry_events",
+    "auth_action_tokens",
 }
 
 POSTGRES_MAX_IDENTIFIER = 63

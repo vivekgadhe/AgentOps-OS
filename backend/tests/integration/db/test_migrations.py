@@ -33,10 +33,11 @@ EXPECTED_TABLES = {
     "approval_requests",
     "agent_memories",
     "telemetry_events",
+    "auth_action_tokens",
 }
 
 EXPECTED_AUDIT_TRIGGERS = {"audit_logs_no_update_delete", "audit_logs_no_truncate"}
-HEAD_REVISION = "0005"
+HEAD_REVISION = "0008"
 
 
 def _ignore_version_table(

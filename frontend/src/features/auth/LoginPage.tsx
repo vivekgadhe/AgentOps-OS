@@ -1,5 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+} from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "../../components/ui/Button";
@@ -39,10 +46,15 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await login({ email: email.trim().toLowerCase(), password }, rememberMe);
+      await login(
+        { email: email.trim().toLowerCase(), password },
+        rememberMe,
+      );
       navigate(destination, { replace: true });
     } catch (error) {
-      setErrorMessage(getApiErrorMessage(error, "Sign-in failed. Please try again."));
+      setErrorMessage(
+        getApiErrorMessage(error, "Sign-in failed. Please try again."),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -51,17 +63,26 @@ export function LoginPage() {
   return (
     <AuthLayout>
       <section className="auth-brand" aria-label="AgentOps-OS">
-        <div className="brand-mark brand-mark-large">
-          <Sparkles size={23} strokeWidth={2.1} />
-        </div>
-        <h1 className="brand-title">AgentOps-OS</h1>
-        <p>Build, run and monitor AI agents<br />for real business workflows</p>
+        <img
+          src="/docs/logos/logo.png"
+          alt="AgentOps-OS"
+          className="auth-brand-logo"
+        />
+        <p>
+          Build, run and monitor AI agents
+          <br />
+          for real business workflows
+        </p>
       </section>
 
       <section className="login-card" aria-labelledby="login-title">
         <div className="login-card-topline">
-          <span className="login-badge"><ShieldCheck size={14} /> SECURE WORKSPACE</span>
-          <span className="login-lock"><LockKeyhole size={15} /></span>
+          <span className="login-badge">
+            <ShieldCheck size={14} /> SECURE WORKSPACE
+          </span>
+          <span className="login-lock">
+            <LockKeyhole size={15} />
+          </span>
         </div>
 
         <div className="login-heading">
@@ -73,7 +94,11 @@ export function LoginPage() {
           <div className="form-field">
             <label htmlFor="email">Email</label>
             <div className="input-wrap">
-              <Mail className="input-leading-icon" size={17} aria-hidden="true" />
+              <Mail
+                className="input-leading-icon"
+                size={17}
+                aria-hidden="true"
+              />
               <TextInput
                 id="email"
                 type="email"
@@ -92,7 +117,11 @@ export function LoginPage() {
           <div className="form-field">
             <label htmlFor="password">Password</label>
             <div className="input-wrap">
-              <LockKeyhole className="input-leading-icon" size={17} aria-hidden="true" />
+              <LockKeyhole
+                className="input-leading-icon"
+                size={17}
+                aria-hidden="true"
+              />
               <TextInput
                 id="password"
                 type={showPassword ? "text" : "password"}
@@ -129,7 +158,10 @@ export function LoginPage() {
               <span className="custom-checkbox" aria-hidden="true" />
               <span>Remember me</span>
             </label>
-            <Link className="text-action" to="/forgot-password">Forgot password?</Link>
+
+            <Link className="text-action" to="/forgot-password">
+              Forgot password?
+            </Link>
           </div>
 
           {errorMessage && (
@@ -139,23 +171,42 @@ export function LoginPage() {
             </div>
           )}
 
-          <Button type="submit" size="lg" className="login-submit" disabled={isSubmitting || isLoading}>
+          <Button
+            type="submit"
+            size="lg"
+            className="login-submit"
+            disabled={isSubmitting || isLoading}
+          >
             {isSubmitting ? (
-              <><span className="button-spinner" /> Signing in…</>
+              <>
+                <span className="button-spinner" /> Signing in…
+              </>
             ) : (
-              <>Sign in <ArrowRight size={17} /></>
+              <>
+                Sign in <ArrowRight size={17} />
+              </>
             )}
           </Button>
         </form>
 
-        <div className="login-divider"><span /> <span>SECURE ACCESS</span> <span /></div>
+        <div className="login-divider">
+          <span />
+          <span>SECURE ACCESS</span>
+          <span />
+        </div>
+
         <p className="signup-prompt">
-          New to AgentOps-OS? <Link className="text-action signup-link" to="/register">Create an account</Link>
+          New to AgentOps-OS?{" "}
+          <Link className="text-action signup-link" to="/register">
+            Create an account
+          </Link>
         </p>
       </section>
 
       <div className="auth-trust-note">
-        <span><ShieldCheck size={14} /> Protected workspace</span>
+        <span>
+          <ShieldCheck size={14} /> Protected workspace
+        </span>
         <span className="trust-separator">•</span>
         <span>AI operations, under control</span>
       </div>

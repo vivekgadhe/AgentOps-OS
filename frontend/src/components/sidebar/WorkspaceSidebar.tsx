@@ -49,7 +49,13 @@ export function WorkspaceSidebar({ user, pendingApprovalCount, onLogout }: Works
 
   return (
     <aside className="workspace-sidebar">
-      <div className="workspace-brand"><span className="brand-mark brand-mark-small"><BrainCircuit size={18} /></span><span>AgentOps-OS</span></div>
+      <div className="workspace-brand">
+        <img
+          src="/docs/logos/logo.png"
+          alt="AgentOps-OS"
+          className="workspace-brand-logo"
+        />
+      </div>
       <div className="sidebar-section-label">WORKSPACE</div>
       <nav className="workspace-nav" aria-label="Workspace navigation">
         {visibleNavigation.map(({ label, icon: Icon, route, enabled }) => {

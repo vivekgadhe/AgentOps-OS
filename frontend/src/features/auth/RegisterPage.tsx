@@ -8,7 +8,6 @@ import {
   LockKeyhole,
   Mail,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -31,14 +30,18 @@ function isAccountConflict(error: unknown): boolean {
 export function RegisterPage() {
   const { register, isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
   const [codeRequested, setCodeRequested] = useState(false);
   const [emailAlreadyRegistered, setEmailAlreadyRegistered] = useState(false);
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -75,6 +78,7 @@ export function RegisterPage() {
       const response = await authApi.requestRegistrationOtp({
         email: email.trim().toLowerCase(),
       });
+
       setCodeRequested(true);
       setSuccessMessage(response.message);
     } catch (error) {
@@ -109,12 +113,14 @@ export function RegisterPage() {
     }
 
     setIsSubmitting(true);
+
     try {
       await register({
         email: email.trim().toLowerCase(),
         otp: otp.trim(),
         password,
       });
+
       navigate("/app", { replace: true });
     } catch (error) {
       if (isAccountConflict(error)) {
@@ -141,13 +147,16 @@ export function RegisterPage() {
       const response = await authApi.requestRegistrationOtp({
         email: email.trim().toLowerCase(),
       });
+
       setSuccessMessage(response.message);
       setOtp("");
     } catch (error) {
       if (isAccountConflict(error)) {
         showExistingAccount(error);
       } else {
-        setErrorMessage(getApiErrorMessage(error, "Unable to resend the code."));
+        setErrorMessage(
+          getApiErrorMessage(error, "Unable to resend the code."),
+        );
       }
     } finally {
       setIsSubmitting(false);
@@ -167,10 +176,11 @@ export function RegisterPage() {
   return (
     <AuthLayout>
       <section className="auth-brand" aria-label="AgentOps-OS">
-        <div className="brand-mark brand-mark-large">
-          <Sparkles size={23} strokeWidth={2.1} />
-        </div>
-        <h1 className="brand-title">AgentOps-OS</h1>
+        <img
+          src="/docs/logos/logo.png"
+          alt="AgentOps-OS"
+          className="auth-brand-logo"
+        />
         <p>
           Build, run and monitor AI agents
           <br />
@@ -197,11 +207,18 @@ export function RegisterPage() {
           </p>
         </div>
 
-        <form onSubmit={codeRequested ? createAccount : requestCode} className="login-form">
+        <form
+          onSubmit={codeRequested ? createAccount : requestCode}
+          className="login-form"
+        >
           <div className="form-field">
             <label htmlFor="register-email">Email address</label>
             <div className="input-wrap">
-              <Mail className="input-leading-icon" size={17} aria-hidden="true" />
+              <Mail
+                className="input-leading-icon"
+                size={17}
+                aria-hidden="true"
+              />
               <TextInput
                 id="register-email"
                 type="email"
@@ -223,9 +240,15 @@ export function RegisterPage() {
           {codeRequested && (
             <>
               <div className="form-field">
-                <label htmlFor="registration-otp">Email verification code</label>
+                <label htmlFor="registration-otp">
+                  Email verification code
+                </label>
                 <div className="input-wrap">
-                  <KeyRound className="input-leading-icon" size={17} aria-hidden="true" />
+                  <KeyRound
+                    className="input-leading-icon"
+                    size={17}
+                    aria-hidden="true"
+                  />
                   <TextInput
                     id="registration-otp"
                     type="text"
@@ -248,7 +271,11 @@ export function RegisterPage() {
               <div className="form-field">
                 <label htmlFor="register-password">Password</label>
                 <div className="input-wrap">
-                  <LockKeyhole className="input-leading-icon" size={17} aria-hidden="true" />
+                  <LockKeyhole
+                    className="input-leading-icon"
+                    size={17}
+                    aria-hidden="true"
+                  />
                   <TextInput
                     id="register-password"
                     type={showPassword ? "text" : "password"}
@@ -276,7 +303,11 @@ export function RegisterPage() {
               <div className="form-field">
                 <label htmlFor="confirm-password">Confirm password</label>
                 <div className="input-wrap">
-                  <LockKeyhole className="input-leading-icon" size={17} aria-hidden="true" />
+                  <LockKeyhole
+                    className="input-leading-icon"
+                    size={17}
+                    aria-hidden="true"
+                  />
                   <TextInput
                     id="confirm-password"
                     type={showConfirmPassword ? "text" : "password"}
@@ -293,18 +324,28 @@ export function RegisterPage() {
                   <button
                     type="button"
                     className="password-toggle"
-                    onClick={() => setShowConfirmPassword((value) => !value)}
+                    onClick={() =>
+                      setShowConfirmPassword((value) => !value)
+                    }
                     aria-label={
-                      showConfirmPassword ? "Hide confirm password" : "Show confirm password"
+                      showConfirmPassword
+                        ? "Hide confirm password"
+                        : "Show confirm password"
                     }
                   >
-                    {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                    {showConfirmPassword ? (
+                      <EyeOff size={17} />
+                    ) : (
+                      <Eye size={17} />
+                    )}
                   </button>
                 </div>
               </div>
+
               <p className="auth-form-hint">
-                Passwords must contain 12–128 characters. The verification code is single-use
-                and expires in 10 minutes. New accounts receive the Operator role.
+                Passwords must contain 12–128 characters. The verification code
+                is single-use and expires in 10 minutes. New accounts receive
+                the Operator role.
               </p>
             </>
           )}
@@ -388,9 +429,14 @@ export function RegisterPage() {
         <div className="login-divider">
           <span /> <span>SECURE ACCESS</span> <span />
         </div>
+
         <p className="signup-prompt">
-          Already have an account? <Link className="text-action signup-link" to="/login">Sign in</Link>
+          Already have an account?{" "}
+          <Link className="text-action signup-link" to="/login">
+            Sign in
+          </Link>
         </p>
+
         <Link className="auth-back-link" to="/login">
           <ArrowLeft size={14} /> Back to sign in
         </Link>

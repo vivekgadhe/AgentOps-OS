@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logos/agentops-logo.svg" alt="AgentOps-OS Logo" width="150">
+  <img src="docs/logos/logo.png" alt="AgentOps-OS Logo" width="150">
 </p>
 
 <h1 align="center">AgentOps-OS</h1>

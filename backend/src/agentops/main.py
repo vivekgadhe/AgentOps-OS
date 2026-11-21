@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.engine import make_url
 
 from agentops import __version__
@@ -29,7 +30,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        db = make_url(settings.database_url)  # host/port/name only; never the password
+        db = make_url(settings.database_url)
         logger.info(
             "app_starting",
             extra={
@@ -43,6 +44,7 @@ def create_app(
         logger.info("app_stopped")
 
     is_prod = settings.app_env == "prod"
+
     app = FastAPI(
         title=settings.app_name,
         version=__version__,
@@ -51,12 +53,27 @@ def create_app(
         redoc_url=None if is_prod else "/redoc",
         openapi_url=None if is_prod else "/openapi.json",
     )
+
     app.state.settings = settings
     app.state.engine = engine
-    # Trusted tool registrations are reused by workflow creation, execution,
-    # and approval resumption so protected tasks can resume after HTTP requests.
+
     app.state.tool_registrars = tuple(tool_registrars)
 
     app.add_middleware(RequestContextMiddleware)
+
+    # Allow the deployed Vercel frontend and local development frontend.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://agentops-os.vercel.app",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.include_router(api_router, prefix=settings.api_prefix)
+
     return app
